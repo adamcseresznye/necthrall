@@ -1,0 +1,6 @@
+{
+    "total_time_concurrency_10": 0.10348121325174968,
+    "total_time_concurrency_20": 0.12386727333068848,
+    "total_time_concurrency_30": 0.114348570505778,
+    "total_time": 0.114348570505778
+}
