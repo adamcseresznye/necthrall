@@ -25,11 +25,11 @@ class FallbackRefinementAgent:
 
     def __init__(self, llm=None):
         """Initialize FallbackRefinementAgent with LLM."""
-        # Allow explicit None for testing
-        if llm is not None:
-            self.llm = llm
+        # If explicitly set to None (for testing), keep as None
+        if llm is None:
+            self.llm = None
         else:
-            # Try to create LLM, but allow None for testing environments
+            # Try to create LLM for non-testing environments
             try:
                 self.llm = ChatGoogleGenerativeAI(
                     model=os.getenv("LLM_MODEL_PRIMARY", "gemini-2.0-flash-exp"),

@@ -3,6 +3,7 @@ sentence-transformers
 transformers
 huggingface-hub
 rank-bm25
+faiss-cpu
 
 pydantic
 pydantic-settings
