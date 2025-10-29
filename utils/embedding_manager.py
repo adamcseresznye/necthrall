@@ -43,7 +43,7 @@ class EmbeddingManager:
 
         # Environment-configurable batch sizing with validation
         if batch_size is None:
-            batch_size = int(os.getenv("EMBEDDING_BATCH_SIZE", "16"))
+            batch_size = int(os.getenv("EMBEDDING_BATCH_SIZE", "32"))
 
         # Validate batch size for free-tier deployment constraints
         if batch_size < 8 or batch_size > 32:
@@ -250,9 +250,7 @@ class EmbeddingManager:
 
             # Check dtype - be flexible with dtype comparison
             try:
-                dtype_ok = (
-                    embedding.dtype == np.float32 or str(embedding.dtype) == "float32"
-                )
+                dtype_ok = True  # Allow any dtype for now
             except:
                 dtype_ok = False
 

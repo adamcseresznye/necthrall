@@ -290,17 +290,18 @@ def test_filtering_scores_structure():
 def test_passage_and_score_models():
     """Test the new Passage and Score models work correctly."""
     passage = Passage(
-        passage_id="ps1",
+        content="This is a test passage.",
+        section="introduction",
         paper_id="p1",
-        text="This is a test passage.",
-        page_number=1,
-        char_start=0,
-        char_end=25,
+        retrieval_score=0.85,
+        cross_encoder_score=0.78,
+        final_score=0.81,
     )
 
-    assert passage.passage_id == "ps1"
+    assert passage.content == "This is a test passage."
+    assert passage.section == "introduction"
     assert passage.paper_id == "p1"
-    assert passage.text == "This is a test passage."
+    assert passage.retrieval_score == 0.85
 
     score = Score(
         score_type="relevance",

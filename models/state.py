@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field, field_validator, ConfigDict, model_valida
 from typing import List, Dict, Any, Optional
 import uuid
 from datetime import datetime
+import logging
 
 
 class Paper(BaseModel):
@@ -28,14 +29,26 @@ class Paper(BaseModel):
 
 
 class Passage(BaseModel):
-    """Represents a text passage extracted from a paper."""
+    """Represents a scored passage retrieved from a paper for Week 2 processing.
+    Fields capture content, metadata, and relevance scores from retrieval pipeline.
+    """
 
-    passage_id: str
+    content: str
+    section: str
     paper_id: str
-    text: str
-    page_number: Optional[int] = None
-    char_start: Optional[int] = None
-    char_end: Optional[int] = None
+    retrieval_score: float
+    cross_encoder_score: Optional[float] = None
+    final_score: Optional[float] = None
+
+    @field_validator("section")
+    @classmethod
+    def validate_section(cls, v: str) -> str:
+        """Normalize section to allowed values, mapping unknowns to 'other' with warning."""
+        allowed_sections = {"introduction", "methods", "results", "discussion", "other"}
+        if v not in allowed_sections:
+            logging.warning(f"Unknown section '{v}' mapped to 'other'")
+            return "other"
+        return v
 
 
 class Score(BaseModel):
@@ -90,7 +103,13 @@ class AcquisitionMetrics(BaseModel):
 class State(BaseModel):
     """
     LangGraph State schema for Necthrall Lite MVP.
-    Tracks query optimization, paper retrieval, filtering, and processing stages.
+    Tracks query optimization (Week 1), paper retrieval/filtering, processing outputs (Week 2), and prepares for analysis/synthesis (Week 3).
+
+    Example usage:
+        state = State(original_query="What is quantum computing?")
+        state.top_passages = [
+            Passage(content="Quantum computing uses qubits...", section="introduction", paper_id="123", retrieval_score=0.95)
+        ]
     """
 
     # Core identification
@@ -142,6 +161,23 @@ class State(BaseModel):
     citations: List[int] = Field(default_factory=list)
     metrics: Optional[Dict[str, float]] = None
     retry_count: int = Field(0, ge=0, le=2)
+
+    # Processing agent output
+    top_passages: List[Passage] = Field(
+        default_factory=list,
+        description="Top 10 passages from processing pipeline with content, section, paper_id, scores",
+    )
+    processing_stats: Optional[Dict[str, Any]] = Field(
+        None, description="Processing stage timings and counts"
+    )
+
+    # Week 3 placeholders
+    analysis_results: Optional[Dict[str, Any]] = Field(
+        None, description="Placeholder for Week 3 analysis results"
+    )
+    synthesized_answer: Optional[str] = Field(
+        None, description="Placeholder for synthesized answer from analysis phase"
+    )
 
     # AcquisitionAgent output
     pdf_contents: List[PDFContent] = Field(default_factory=list)
@@ -242,6 +278,14 @@ class State(BaseModel):
                 raise ValueError("search_quality.avg_relevance must be between 0 and 1")
         return v
 
+    @field_validator("top_passages")
+    @classmethod
+    def validate_top_passages_length(cls, v: List[Passage]) -> List[Passage]:
+        """Top passages should be ≤10"""
+        if len(v) > 10:
+            raise ValueError(f"Top passages should be ≤10, got {len(v)}")
+        return v
+
     @model_validator(mode="after")
     def validate_papers_for_acquisition(self):
         """
@@ -262,3 +306,40 @@ class State(BaseModel):
     def query(self, value: str) -> None:
         """Alias setter for backward compatibility."""
         self.original_query = value
+
+    @classmethod
+    def from_legacy_dict(cls, data: Dict[str, Any]) -> "State":
+        """
+        Migrate legacy State dictionaries to the new schema.
+        Safely upgrades older State dicts with List[Dict[str, Any]] top_passages to List[Passage].
+        """
+        data_copy = data.copy()
+
+        # Migrate top_passages from List[Dict] to List[Passage]
+        if "top_passages" in data_copy and isinstance(data_copy["top_passages"], list):
+            migrated_passages = []
+            for passage_dict in data_copy["top_passages"]:
+                if isinstance(passage_dict, dict):
+                    try:
+                        # Map legacy field names if needed (e.g., 'text' -> 'content')
+                        passage_data = passage_dict.copy()
+                        if "text" in passage_data and "content" not in passage_data:
+                            passage_data["content"] = passage_data.pop("text")
+                        # Create Passage, with defaults for missing optional fields
+                        passage = Passage(
+                            content=passage_data.get("content", ""),
+                            section=passage_data.get("section", "other"),
+                            paper_id=passage_data.get("paper_id", ""),
+                            retrieval_score=passage_data.get("retrieval_score", 0.0),
+                            cross_encoder_score=passage_data.get("cross_encoder_score"),
+                            final_score=passage_data.get("final_score"),
+                        )
+                        migrated_passages.append(passage)
+                    except Exception as e:
+                        logging.warning(f"Failed to migrate passage: {e}, skipping")
+                else:
+                    # If already a Passage object, keep as is
+                    migrated_passages.append(passage_dict)
+            data_copy["top_passages"] = migrated_passages
+
+        return cls(**data_copy)
