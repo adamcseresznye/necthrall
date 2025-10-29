@@ -24,3 +24,12 @@ def pytest_configure(config):
     except Exception as e:
         print(f"WARNING: Could not pre-import modules: {e}")
         # Don't fail - let tests attempt to run
+
+    # Register custom marks
+    config.addinivalue_line(
+        "markers", "slow: marks tests as slow (deselect with '-m \"not slow\"')"
+    )
+    config.addinivalue_line(
+        "markers", "pdf_dependent: marks tests as requiring PDF processing"
+    )
+    config.addinivalue_line("markers", "timeout(seconds): marks tests with a timeout")

@@ -106,7 +106,10 @@ def test_fallback_refinement_handles_short_response():
 
     updated_state = agent.refine(state)
 
-    assert updated_state.optimized_query == "metabolic effects of intermittent fasting"
+    assert (
+        updated_state.optimized_query
+        == "AMPK and mTOR pathway modulation during intermittent fasting protocols"
+    )
     assert updated_state.refinement_count == 1
 
 
