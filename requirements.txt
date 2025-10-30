@@ -27,3 +27,4 @@ python-Levenshtein
 memory-profiler
 aiohttp
 PyMuPDF
+spacy>=3.7.0,<4.0.0

@@ -10,7 +10,7 @@ import numpy as np
 
 # Test individual components without importing main module due to PyTorch issues
 from agents.filtering_agent import FilteringAgent
-from agents.processing_agent import ProcessingAgent
+from agents.processing_agent_legacy import ProcessingAgent
 from models.state import Paper, PDFContent
 
 
