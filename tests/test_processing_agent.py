@@ -224,13 +224,20 @@ def test_processing_agent_callable(agent, sample_filtered_papers, sample_pdf_con
 
         # Verify top_passages
         assert len(result_state.top_passages) == 2
-        assert all(isinstance(p, dict) for p in result_state.top_passages)
-        assert result_state.top_passages[0]["content"] == "chunk1"
-        assert result_state.top_passages[0]["section"] == "introduction"
-        assert result_state.top_passages[0]["paper_id"] == "paper1"
-        assert "retrieval_score" in result_state.top_passages[0]
-        assert "cross_encoder_score" in result_state.top_passages[0]
-        assert "final_score" in result_state.top_passages[0]
+
+        # Convert Passage objects to dicts for compatibility and testing
+        passages_dict = [
+            p.model_dump() if hasattr(p, "model_dump") else p
+            for p in result_state.top_passages
+        ]
+
+        # Verify content fields in returned passages
+        assert passages_dict[0]["content"] == "chunk1"
+        assert passages_dict[0]["section"] == "introduction"
+        assert passages_dict[0]["paper_id"] == "paper1"
+        assert "retrieval_score" in passages_dict[0]
+        assert "cross_encoder_score" in passages_dict[0]
+        assert "final_score" in passages_dict[0]
 
         # Verify processing_stats
         stats = result_state.processing_stats
@@ -357,7 +364,13 @@ def test_processing_agent_chunking_fallback(
         assert (
             result_state.processing_stats["fallback_used_count"] == 2
         )  # Both papers fallback
-        assert result_state.top_passages[0]["section"] == "unknown"
+        # Convert Passage object to dict for compatibility
+        passages_dict = [
+            p.model_dump() if hasattr(p, "model_dump") else p
+            for p in result_state.top_passages
+        ]
+        # Passage model normalizes "unknown" sections to "other"
+        assert passages_dict[0]["section"] == "other"
 
 
 def test_processing_agent_stats_structure(
