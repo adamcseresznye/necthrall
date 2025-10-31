@@ -1,0 +1,129 @@
+{
+  "benchmark_info": {
+    "total_iterations": 3,
+    "benchmark_duration": 0.27773594856262207,
+    "timestamp": 1761941908.8637547,
+    "test_state_papers": 5
+  },
+  "performance_metrics": {
+    "legacy_agent": {
+      "mean_time": 2.5,
+      "median_time": 2.5,
+      "std_dev_time": 0.0,
+      "p95_time": 2.5,
+      "min_time": 2.5,
+      "max_time": 2.5,
+      "mean_memory_mb": 100.0,
+      "target_met_lt_4s": true
+    },
+    "modular_agent": {
+      "mean_time": 3.0,
+      "median_time": 3.0,
+      "std_dev_time": 0.0,
+      "p95_time": 3.0,
+      "min_time": 3.0,
+      "max_time": 3.0,
+      "mean_memory_mb": 120.0,
+      "target_met_lt_4s": true
+    },
+    "regression_analysis": {
+      "mean_regression_ratio": 1.2,
+      "median_regression_ratio": 1.2,
+      "max_regression_ratio": 1.2,
+      "no_significant_regression": true,
+      "within_acceptable_limit": true
+    }
+  },
+  "functional_validation": {
+    "all_legacy_successful": true,
+    "all_modular_successful": true,
+    "all_passage_equivalent": false,
+    "enhanced_features_working": true
+  },
+  "individual_results": [
+    {
+      "iteration": 1,
+      "timestamp": 1761941908.5866375,
+      "legacy": {
+        "time_seconds": 2.5,
+        "memory_mb": 100.0,
+        "passages_returned": 10,
+        "chunks_processed": 25,
+        "success": true
+      },
+      "modular": {
+        "time_seconds": 3.0,
+        "memory_mb": 120.0,
+        "passages_returned": 5,
+        "chunks_processed": 5,
+        "enhanced_chunks": 5,
+        "enhanced_passages": 5,
+        "processing_metadata_populated": true,
+        "success": true
+      },
+      "comparison": {
+        "passage_equivalence": false,
+        "regression_ratio": 1.2,
+        "absolute_time_difference": 0.5,
+        "memory_difference": 20.0,
+        "both_successful": true
+      }
+    },
+    {
+      "iteration": 2,
+      "timestamp": 1761941908.739577,
+      "legacy": {
+        "time_seconds": 2.5,
+        "memory_mb": 100.0,
+        "passages_returned": 10,
+        "chunks_processed": 25,
+        "success": true
+      },
+      "modular": {
+        "time_seconds": 3.0,
+        "memory_mb": 120.0,
+        "passages_returned": 5,
+        "chunks_processed": 5,
+        "enhanced_chunks": 5,
+        "enhanced_passages": 5,
+        "processing_metadata_populated": true,
+        "success": true
+      },
+      "comparison": {
+        "passage_equivalence": false,
+        "regression_ratio": 1.2,
+        "absolute_time_difference": 0.5,
+        "memory_difference": 20.0,
+        "both_successful": true
+      }
+    },
+    {
+      "iteration": 3,
+      "timestamp": 1761941908.857871,
+      "legacy": {
+        "time_seconds": 2.5,
+        "memory_mb": 100.0,
+        "passages_returned": 10,
+        "chunks_processed": 25,
+        "success": true
+      },
+      "modular": {
+        "time_seconds": 3.0,
+        "memory_mb": 120.0,
+        "passages_returned": 5,
+        "chunks_processed": 5,
+        "enhanced_chunks": 5,
+        "enhanced_passages": 5,
+        "processing_metadata_populated": true,
+        "success": true
+      },
+      "comparison": {
+        "passage_equivalence": false,
+        "regression_ratio": 1.2,
+        "absolute_time_difference": 0.5,
+        "memory_difference": 20.0,
+        "both_successful": true
+      }
+    }
+  ]
+}

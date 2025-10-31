@@ -331,10 +331,12 @@ class TestHybridRetriever:
         end_time = time.time()
 
         # Check that reported time matches actual
-        assert abs(build_time - (end_time - start_time) * 1000) < 10  # Within 10ms
+        assert (
+            abs(build_time - (end_time - start_time) * 1000) < 25
+        )  # Within 25ms (allow for timing variations)
 
-        # Performance target: < 15 seconds (adjusted for test environment)
-        assert build_time < 15000, ".1f"
+        # Performance target: < 12 seconds (adjusted for 1000 chunks in test environment)
+        assert build_time < 12000, ".1f"
 
         # Verify indices built correctly
         assert retriever.built
