@@ -23,13 +23,12 @@ class FallbackRefinementAgent:
     - SearchAgent returned <10 papers or avg_relevance <0.4
     """
 
-    def __init__(self, llm=None):
+    _DEFAULT_LLM = object()  # Sentinel for default LLM creation
+
+    def __init__(self, llm=_DEFAULT_LLM):
         """Initialize FallbackRefinementAgent with LLM."""
-        # If explicitly set to None (for testing), keep as None
-        if llm is None:
-            self.llm = None
-        else:
-            # Try to create LLM for non-testing environments
+        if llm is self._DEFAULT_LLM:
+            # Default behavior: try to create LLM, fallback to None if unavailable
             try:
                 self.llm = ChatGoogleGenerativeAI(
                     model=os.getenv("LLM_MODEL_PRIMARY", "gemini-2.0-flash-exp"),
@@ -39,6 +38,9 @@ class FallbackRefinementAgent:
             except Exception:
                 # For testing environments without credentials
                 self.llm = None
+        else:
+            # Explicit LLM provided (including None for testing)
+            self.llm = llm
 
         self.prompt = PromptTemplate(
             input_variables=["original_query", "optimized_query", "search_summary"],

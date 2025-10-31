@@ -84,7 +84,7 @@ class AdvancedDocumentChunker:
         chunk_size: int = 500,
         chunk_overlap: int = 50,
         min_section_chars: int = 50,
-        min_chunk_tokens: int = 100,
+        min_chunk_tokens: int = 50,
         memory_threshold_mb: int = 100,
         enable_spacy: bool = True,
         spacy_model: str = "en_core_web_sm",

@@ -130,6 +130,8 @@ def test_processing_agent_text_chunking(mock_request):
     # Mock the embedding model
     with patch("sentence_transformers.SentenceTransformer") as mock_st:
         mock_model = MagicMock()
+        # Add proper mock for encode method to return correct shape
+        mock_model.encode.return_value = np.random.rand(1, 384).astype(np.float32)
         mock_st.return_value = mock_model
 
         mock_request.app.state.embedding_model = mock_model

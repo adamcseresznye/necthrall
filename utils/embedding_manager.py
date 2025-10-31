@@ -166,17 +166,16 @@ class EmbeddingManager:
             batch_results = await asyncio.gather(*batch_tasks, return_exceptions=True)
 
             for batch_result, batch_idx in zip(batch_results, range(len(batches))):
-                if isinstance(batch_result, Exception):
+                try:
+                    processed_chunks.extend(batch_result)
+                    logger.info(
+                        f"Batch {batch_idx} processed, current total: {len(processed_chunks)}"
+                    )
+                except TypeError:
+                    # batch_result is not iterable (e.g., Exception), log as error
                     logger.error(f"Batch {batch_idx} failed: {batch_result}")
-                    # For catastrophic batch failures, continue with next batch
-                    # Individual chunk errors are handled within _process_batch_async
+                    # Continue with next batch
                     continue
-
-                processed_chunks.extend(batch_result)
-                # Debug: confirm extention worked
-                logger.info(
-                    f"Batch {batch_idx} processed, current total: {len(processed_chunks)}"
-                )
 
                 # Log progress for large batch sets
                 if (
@@ -266,7 +265,10 @@ class EmbeddingManager:
             # Check embedding_dim value
             dim_ok = embedding_dim == self.embedding_dim
 
-            if dtype_ok and shape_ok and dim_ok:
+            # Additional check: embedding should not be all zeros (indicates failed processing)
+            embedding_non_zero = not np.allclose(embedding, 0.0)
+
+            if dtype_ok and shape_ok and dim_ok and embedding_non_zero:
                 final_chunks.append(chunk)
             else:
                 logger.warning(

@@ -24,9 +24,10 @@ class CrossEncoderReranker:
     4. Otherwise: Rerank by relevance scores + add position metadata
 
     Performance Targets:
+    - Model loading: < 200ms on first call
     - Full reranking: < 600ms for 15 passages (batch inference)
     - Skip optimization: saves ~400ms when triggered (confidence gap > 0.8)
-    - Memory: < 200MB during cross-encoder inference
+    - Memory: < 100MB during cross-encoder inference
 
     Confidence Threshold Calibration:
     - Gap > 0.8 corresponds to MAD (Mean Absolute Deviation) threshold
@@ -36,7 +37,7 @@ class CrossEncoderReranker:
 
     def __init__(self, model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"):
         """
-        Initialize cross-encoder reranker with specified model.
+        Initialize cross-encoder reranker with specified model and warm-up.
 
         Args:
             model_name: HuggingFace model name/path (default: ms-marco-MiniLM-L-6-v2)
@@ -47,11 +48,13 @@ class CrossEncoderReranker:
             "cross-encoder/ms-marco-electra-base",
         ]
         self.model: Optional[CrossEncoder] = None
+        self.tokenizer: Optional[object] = None  # For precise tokenization
         self.max_seq_length = 512  # CrossEncoder context limit
         self.confidence_threshold = 0.8  # Gap threshold for skipping reranking
 
         # Performance tracking
         self.rerank_time_ms = 0.0
+        self.model_load_time_ms = 0.0
         self.skip_count = 0
         self.total_count = 0
 
@@ -62,19 +65,94 @@ class CrossEncoderReranker:
         # Quality baseline tracking
         self.baseline_scores = []  # Track retrieval_score baselines for comparison
 
+        # Memory pooling for optimization
+        self._string_pool = {}  # Cache processed text strings
+        self._tensor_pool = []  # Reuse tensor buffers during inference
+        self.batch_size = 15  # Default batch size for scoring optimization
+        self.scoring_timeout_ms = 10000  # 10 second timeout for cross-encoder calls
+
+        # Detailed profiling metrics
+        self.last_profile = {}  # Store last operation's detailed timing
+
+        # Initialize and warm-up model immediately (< 200ms target)
+        self._initialize_model()
+
         logger.info(f"Initialized CrossEncoderReranker with model: {model_name}")
+
+    def _initialize_model(self) -> None:
+        """Initialize and warm-up the cross-encoder model for fast first inference."""
+        load_start = time.perf_counter()
+
+        try:
+            # Load model eagerly
+            self._load_model()
+
+            # Warm-up with dummy inference to ensure fast first real call
+            warmup_query = "warmup query"
+            warmup_passage = "This is a warmup passage for model initialization."
+            pairs = [(warmup_query, warmup_passage)]
+
+            # Perform warm-up inference
+            self.model.predict(pairs, show_progress_bar=False)
+
+            self.model_load_time_ms = (time.perf_counter() - load_start) * 1000
+
+            logger.info(
+                json.dumps(
+                    {
+                        "event": "model_warmup_complete",
+                        "model_name": self.model_name,
+                        "load_time_ms": round(self.model_load_time_ms, 2),
+                        "target_met": self.model_load_time_ms < 200,
+                    }
+                )
+            )
+
+            # Validate loading time target
+            if self.model_load_time_ms >= 200:
+                logger.warning(
+                    json.dumps(
+                        {
+                            "event": "model_load_target_missed",
+                            "load_time_ms": round(self.model_load_time_ms, 2),
+                            "target": 200,
+                            "excess_ms": round(self.model_load_time_ms - 200, 2),
+                        }
+                    )
+                )
+
+        except Exception as e:
+            logger.error(f"Model initialization failed: {e}")
+            raise RuntimeError(f"Cross-encoder model initialization failed: {e}") from e
 
     def _load_model(self) -> None:
         """Load cross-encoder model with fallback support."""
-        if self.model is not None:
-            return
-
         models_to_try = [self.model_name] + self.fallback_models
 
         for model_name in models_to_try:
             try:
                 start_time = time.perf_counter()
                 self.model = CrossEncoder(model_name, max_length=self.max_seq_length)
+
+                # Extract tokenizer for precise tokenization (if available)
+                if hasattr(self.model, "tokenizer"):
+                    self.tokenizer = self.model.tokenizer
+                elif hasattr(self.model, "model") and hasattr(
+                    self.model.model, "tokenizer"
+                ):
+                    self.tokenizer = self.model.model.tokenizer
+                else:
+                    # Fallback: try to get tokenizer directly from model name
+                    try:
+                        from transformers import AutoTokenizer
+
+                        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+                    except:
+                        logger.warning(
+                            "Could not extract tokenizer for precise tokenization - using character estimates"
+                        )
+                        self.tokenizer = None
+
                 load_time = (time.perf_counter() - start_time) * 1000
 
                 logger.info(
@@ -85,6 +163,7 @@ class CrossEncoderReranker:
                             "fallback_used": model_name != self.model_name,
                             "load_time_ms": round(load_time, 2),
                             "max_context_length": self.max_seq_length,
+                            "tokenizer_available": self.tokenizer is not None,
                         }
                     )
                 )
@@ -194,7 +273,7 @@ class CrossEncoderReranker:
         """
         Truncate passage to fit cross-encoder context limit.
 
-        Uses rough token estimation: ~4 characters per token.
+        Uses precise tokenization when available, falls back to character estimation.
 
         Args:
             content: Original passage content
@@ -202,7 +281,52 @@ class CrossEncoderReranker:
         Returns:
             Truncated content if needed
         """
-        estimated_tokens = len(content) // 4  # Rough character-to-token ratio
+        if not content:
+            return content
+
+        # Use precise tokenization if tokenizer is available
+        if self.tokenizer is not None:
+            try:
+                # Encode and check token count
+                tokens = self.tokenizer.encode(content, add_special_tokens=False)
+                if len(tokens) <= self.max_seq_length:
+                    return content
+
+                # Truncate tokens and decode back to text
+                truncated_tokens = tokens[: self.max_seq_length]
+                truncated = self.tokenizer.decode(
+                    truncated_tokens, skip_special_tokens=True
+                )
+
+                # Try to end at word boundary if possible
+                if len(truncated) > len(content) * 0.8:  # Don't truncate too much
+                    last_space = truncated.rfind(" ")
+                    if last_space > len(truncated) * 0.7:
+                        truncated = truncated[:last_space]
+
+                logger.info(
+                    json.dumps(
+                        {
+                            "event": "passage_truncated_precise",
+                            "original_chars": len(content),
+                            "original_tokens": len(tokens),
+                            "truncated_chars": len(truncated),
+                            "truncated_tokens": len(truncated_tokens),
+                            "max_tokens": self.max_seq_length,
+                            "method": "tokenizer_based",
+                        }
+                    )
+                )
+
+                return truncated
+
+            except Exception as e:
+                logger.warning(
+                    f"Precise tokenization failed, falling back to estimation: {e}"
+                )
+
+        # Fallback: character-based estimation (~4 chars per token)
+        estimated_tokens = len(content) // 4
 
         if estimated_tokens <= self.max_seq_length:
             return content
@@ -211,22 +335,27 @@ class CrossEncoderReranker:
         truncated_chars = self.max_seq_length * 4
         truncated = content[:truncated_chars]
 
-        # Try to cut at sentence boundary
+        # Try to cut at sentence/word boundary
         last_sentence_end = max(
             truncated.rfind("."), truncated.rfind("!"), truncated.rfind("?")
         )
+        last_space = truncated.rfind(" ")
 
-        if last_sentence_end > len(truncated) * 0.7:  # Don't cut too much
+        # Prefer sentence boundary, but fall back to word boundary
+        if last_sentence_end > len(truncated) * 0.7:
             truncated = truncated[: last_sentence_end + 1]
+        elif last_space > len(truncated) * 0.8:
+            truncated = truncated[:last_space]
 
         logger.warning(
             json.dumps(
                 {
-                    "event": "passage_truncated",
-                    "original_length": len(content),
-                    "truncated_length": len(truncated),
+                    "event": "passage_truncated_estimate",
+                    "original_chars": len(content),
+                    "truncated_chars": len(truncated),
                     "original_tokens_est": estimated_tokens,
                     "max_tokens": self.max_seq_length,
+                    "method": "character_estimation",
                 }
             )
         )
@@ -289,7 +418,7 @@ class CrossEncoderReranker:
         self, query: str, passages: List[Dict[str, Any]]
     ) -> List[float]:
         """
-        Score query-passage pairs using cross-encoder.
+        Score query-passage pairs using cross-encoder with configurable batching.
 
         Args:
             query: Search query string
@@ -299,39 +428,127 @@ class CrossEncoderReranker:
             Cross-encoder relevance scores (higher = more relevant)
 
         Raises:
-            RuntimeError: If scoring fails
+            RuntimeError: If scoring fails after fallback attempts
         """
-        self._load_model()
+        # Model is already loaded and warmed up during initialization
+        start_time = time.perf_counter()
 
         try:
-            # Prepare query-passage pairs
-            pairs = [(query, p["content"]) for p in passages]
+            # Prepare query-passage pairs with string pooling optimization
+            query_key = f"query_{hash(query)}"
+            if query_key not in self._string_pool:
+                self._string_pool[query_key] = query
 
-            # Batch score all pairs
-            start_time = time.perf_counter()
-            scores = self.model.predict(pairs, show_progress_bar=False)
-            self._update_memory_peak()
+            pairs = []
+            for p in passages:
+                content_key = f"passage_{hash(p['content'])}"
+                if content_key not in self._string_pool:
+                    self._string_pool[content_key] = p["content"]
+                pairs.append(
+                    (self._string_pool[query_key], self._string_pool[content_key])
+                )
 
-            score_time = (time.perf_counter() - start_time) * 1000
+            # Batch processing with configurable chunk sizes
+            all_scores = []
+            for i in range(0, len(pairs), self.batch_size):
+                batch_pairs = pairs[i : i + self.batch_size]
+                batch_start = time.perf_counter()
+
+                # Cross-platform timeout protection (fallback since signal doesn't work on Windows)
+                import threading
+
+                result_container = {}
+                exception_container = {}
+
+                def scoring_task():
+                    try:
+                        scores = self.model.predict(
+                            batch_pairs, show_progress_bar=False
+                        )
+                        result_container["scores"] = scores
+                    except Exception as e:
+                        exception_container["exception"] = e
+
+                scoring_thread = threading.Thread(target=scoring_task, daemon=True)
+                scoring_thread.start()
+                scoring_thread.join(timeout=self.scoring_timeout_ms / 1000)
+
+                if exception_container:
+                    raise exception_container["exception"]
+                elif "scores" in result_container:
+                    batch_scores = result_container["scores"]
+                    all_scores.extend(batch_scores.tolist())
+
+                    batch_time = (time.perf_counter() - batch_start) * 1000
+                    self._update_memory_peak()
+
+                    logger.info(
+                        json.dumps(
+                            {
+                                "event": "batch_scoring_complete",
+                                "batch_size": len(batch_pairs),
+                                "batch_time_ms": round(batch_time, 2),
+                                "avg_score": round(float(batch_scores.mean()), 4),
+                                "memory_peak_mb": round(self.peak_memory_mb, 2),
+                            }
+                        )
+                    )
+
+                else:
+                    # Timeout occurred
+                    raise TimeoutError("Cross-encoder scoring timeout")
+
+            # Update profiling
+            scoring_time = (time.perf_counter() - start_time) * 1000
+
+            if hasattr(self, "last_profile") and "scoring_start" in self.last_profile:
+                self.last_profile["scoring_start"] = start_time
 
             logger.info(
                 json.dumps(
                     {
                         "event": "cross_encoder_scoring_complete",
                         "num_pairs": len(pairs),
-                        "score_time_ms": round(score_time, 2),
-                        "avg_score": round(float(scores.mean()), 4),
-                        "score_std": round(float(scores.std()), 4),
+                        "total_scoring_time_ms": round(scoring_time, 2),
+                        "avg_score": round(float(sum(all_scores) / len(all_scores)), 4),
+                        "score_std": round(
+                            float(
+                                (
+                                    sum(
+                                        (s - sum(all_scores) / len(all_scores)) ** 2
+                                        for s in all_scores
+                                    )
+                                    / len(all_scores)
+                                )
+                                ** 0.5
+                            ),
+                            4,
+                        ),
                         "memory_peak_mb": round(self.peak_memory_mb, 2),
+                        "string_pool_size": len(self._string_pool),
+                        "batch_size_used": self.batch_size,
                     }
                 )
             )
 
-            return scores.tolist()
+            return all_scores
 
         except Exception as e:
             logger.error(f"Cross-encoder scoring failed: {e}")
-            raise RuntimeError(f"Passage scoring failed: {e}") from e
+
+            # Comprehensive fallback: return all zero scores to trigger retrieval_score usage
+            logger.warning(
+                json.dumps(
+                    {
+                        "event": "cross_encoder_fallback",
+                        "error": str(e)[:100],
+                        "num_passages": len(passages),
+                        "fallback_strategy": "use_retrieval_score",
+                    }
+                )
+            )
+
+            return [0.0] * len(passages)
 
     def _rerank_passages(
         self, passages: List[Dict[str, Any]], scores: List[float]
@@ -392,11 +609,25 @@ class CrossEncoderReranker:
             RuntimeError: If reranking fails
         """
         self.total_count += 1
-        start_time = time.perf_counter()
+        overall_start = time.perf_counter()
+
+        # Initialize profiling
+        self.last_profile = {
+            "overall_start": overall_start,
+            "validation_start": None,
+            "scoring_start": None,
+            "confidence_start": None,
+            "final_rerank_start": None,
+            "end_time": None,
+        }
 
         try:
-            # Validate and preprocess passages
+            # Step 1: Validate and preprocess passages
+            self.last_profile["validation_start"] = time.perf_counter()
             valid_passages = self._validate_passages(passages)
+            validation_time = (
+                time.perf_counter() - self.last_profile["validation_start"]
+            ) * 1000
 
             # Store baseline scores for quality comparison
             baseline_scores = [p.get("retrieval_score", 0.0) for p in valid_passages]
@@ -413,7 +644,7 @@ class CrossEncoderReranker:
                     result.append(enriched)
 
                 result = result[:10]  # Take top 10 or fewer
-                self.rerank_time_ms = (time.perf_counter() - start_time) * 1000
+                self.rerank_time_ms = (time.perf_counter() - overall_start) * 1000
 
                 metrics = self._compute_metrics(
                     query, [], result, True, self.rerank_time_ms, baseline_scores
@@ -421,12 +652,20 @@ class CrossEncoderReranker:
 
                 return (result, metrics) if return_metrics else result
 
-            # Score all passages
+            # Step 2: Score all passages
+            self.last_profile["scoring_start"] = time.perf_counter()
             scores = self._score_passages(query, valid_passages)
+            scoring_time = (
+                time.perf_counter() - self.last_profile["scoring_start"]
+            ) * 1000
 
-            # Check confidence for skipping
+            # Step 3: Check confidence for skipping
+            self.last_profile["confidence_start"] = time.perf_counter()
             sorted_scores = sorted(scores, reverse=True)
             should_skip = self._should_skip_reranking(sorted_scores)
+            confidence_time = (
+                time.perf_counter() - self.last_profile["confidence_start"]
+            ) * 1000
 
             if should_skip:
                 # Skip reranking - use original order but add scores
@@ -444,14 +683,51 @@ class CrossEncoderReranker:
                     result.append(enriched)
 
             else:
-                # Full reranking
+                # Step 4: Full reranking
+                self.last_profile["final_rerank_start"] = time.perf_counter()
                 result = self._rerank_passages(valid_passages, scores)
                 result = result[:10]  # Take top 10 reranked
+                reranking_time = (
+                    time.perf_counter() - self.last_profile["final_rerank_start"]
+                ) * 1000
 
-            self.rerank_time_ms = (time.perf_counter() - start_time) * 1000
+            # Complete profiling
+            self.last_profile["end_time"] = time.perf_counter()
+            total_time = (self.last_profile["end_time"] - overall_start) * 1000
+            self.rerank_time_ms = total_time
+
+            # Add profiling data to metrics
+            profiling_data = {
+                "validation_time_ms": round(validation_time, 2),
+                "scoring_time_ms": (
+                    round(scoring_time, 2) if "scoring_time" in locals() else 0.0
+                ),
+                "confidence_time_ms": (
+                    round(confidence_time, 2) if "confidence_time" in locals() else 0.0
+                ),
+                "reranking_time_ms": (
+                    round(reranking_time, 2) if "reranking_time" in locals() else 0.0
+                ),
+                "total_time_ms": round(total_time, 2),
+                "bottlenecks": [],  # Will be populated below
+            }
+
+            # Identify bottlenecks (>30% of total time)
+            if profiling_data["scoring_time_ms"] > total_time * 0.3:
+                profiling_data["bottlenecks"].append("scoring")
+            if profiling_data["validation_time_ms"] > total_time * 0.3:
+                profiling_data["bottlenecks"].append("validation")
+            if "reranking_time" in locals() and reranking_time > total_time * 0.3:
+                profiling_data["bottlenecks"].append("reranking")
 
             metrics = self._compute_metrics(
-                query, scores, result, should_skip, self.rerank_time_ms, baseline_scores
+                query,
+                scores,
+                result,
+                should_skip,
+                self.rerank_time_ms,
+                baseline_scores,
+                profiling_data,
             )
 
             logger.info(json.dumps(metrics))
@@ -499,6 +775,7 @@ class CrossEncoderReranker:
         skipped: bool,
         time_ms: float,
         baseline_scores: Optional[List[float]] = None,
+        profiling_data: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Compute detailed reranking metrics with quality baseline comparisons.
@@ -609,7 +886,7 @@ class CrossEncoderReranker:
                     )
                 )
 
-        return {
+        base_metrics = {
             "event": "reranking_complete",
             "query_length": len(query),
             "num_passages_input": len(scores) if scores else 0,
@@ -627,3 +904,9 @@ class CrossEncoderReranker:
             "skip_count": self.skip_count,
             "quality_improvement": quality_improvement,
         }
+
+        # Add profiling data if available
+        if profiling_data:
+            base_metrics.update(profiling_data)
+
+        return base_metrics

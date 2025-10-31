@@ -326,12 +326,10 @@ class Passage(BaseModel):
     )
     cross_encoder_score: Optional[float] = Field(
         None,
-        ge=0.0,
-        description="Cross-encoder reranking score (raw model outputs, can be > 1.0)",
+        description="Cross-encoder reranking score (raw model outputs, can be negative)",
     )
     final_score: Optional[float] = Field(
         None,
-        ge=0.0,
         description="Final combined relevance score (can be denormalized for ranking)",
     )
     char_start: Optional[int] = Field(
