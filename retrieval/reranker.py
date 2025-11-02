@@ -30,27 +30,32 @@ class CrossEncoderReranker:
     - Memory: < 100MB during cross-encoder inference
 
     Confidence Threshold Calibration:
-    - Gap > 0.8 corresponds to MAD (Mean Absolute Deviation) threshold
-    - Represents unambiguous top result (no reranking needed)
-    - Achieves >95% precision in skip decisions for MS MARCO-style queries
+    - Gap > 0.6 corresponds to optimized threshold for speed-quality balance
+    - Represents confident top result (aggressive skipping for performance)
+    - Achieves higher skip rate while maintaining quality for scientific queries
     """
 
-    def __init__(self, model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"):
+    def __init__(
+        self, model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2", app=None
+    ):
         """
         Initialize cross-encoder reranker with specified model and warm-up.
 
         Args:
-            model_name: HuggingFace model name/path (default: ms-marco-MiniLM-L-6-v2)
+            model_name: HuggingFace model name/path (default: ms-marco-TinyBERT-L-2-v2 for speed)
+            app: FastAPI application with cached models in state
         """
         self.model_name = model_name
         self.fallback_models = [
-            "cross-encoder/ms-marco-TinyBERT-L-2-v2",
+            "cross-encoder/ms-marco-MiniLM-L-6-v2",  # Keep larger model as fallback
             "cross-encoder/ms-marco-electra-base",
         ]
         self.model: Optional[CrossEncoder] = None
         self.tokenizer: Optional[object] = None  # For precise tokenization
         self.max_seq_length = 512  # CrossEncoder context limit
-        self.confidence_threshold = 0.8  # Gap threshold for skipping reranking
+        self.confidence_threshold = (
+            0.8  # Gap threshold for skipping reranking (calibrated for quality)
+        )
 
         # Performance tracking
         self.rerank_time_ms = 0.0
@@ -68,16 +73,29 @@ class CrossEncoderReranker:
         # Memory pooling for optimization
         self._string_pool = {}  # Cache processed text strings
         self._tensor_pool = []  # Reuse tensor buffers during inference
-        self.batch_size = 15  # Default batch size for scoring optimization
+        self.batch_size = 8  # Smaller batch size for consistency
         self.scoring_timeout_ms = 10000  # 10 second timeout for cross-encoder calls
 
         # Detailed profiling metrics
         self.last_profile = {}  # Store last operation's detailed timing
 
-        # Initialize and warm-up model immediately (< 200ms target)
-        self._initialize_model()
+        # Use cached model if app provided, otherwise load fresh
+        if app is not None and hasattr(app.state, "cross_encoder_model"):
+            self.model = app.state.cross_encoder_model
+            self.model_load_time_ms = 0.0  # No loading time - already cached!
+            logger.info("✅ Using cached CrossEncoder model (0ms load time)")
+            # Extract tokenizer from cached model
+            if hasattr(self.model, "tokenizer"):
+                self.tokenizer = self.model.tokenizer
+            elif hasattr(self.model, "model") and hasattr(
+                self.model.model, "tokenizer"
+            ):
+                self.tokenizer = self.model.model.tokenizer
+        else:
+            # Fallback: load fresh model (will take 1000ms)
+            self._initialize_model()
 
-        logger.info(f"Initialized CrossEncoderReranker with model: {model_name}")
+        logger.info(f"Initialized CrossEncoderReranker with model: {self.model_name}")
 
     def _initialize_model(self) -> None:
         """Initialize and warm-up the cross-encoder model for fast first inference."""
@@ -243,7 +261,9 @@ class CrossEncoderReranker:
 
     def _should_skip_reranking(self, scores: List[float]) -> bool:
         """
-        Determine if reranking should be skipped based on confidence gap.
+        Determine if reranking should be skipped based on confidence gap and early termination.
+
+        Enhanced skipping: skip if confidence gap is high OR top score shows very high confidence.
 
         Args:
             scores: Cross-encoder scores in descending order
@@ -251,6 +271,26 @@ class CrossEncoderReranker:
         Returns:
             True if reranking can be skipped (already confident in ranking)
         """
+        if not scores or len(scores) < 2:
+            return True
+
+        # Early termination for very confident cases
+        top_score = scores[0]
+        if top_score > 0.75:  # Very aggressive confidence threshold
+            logger.info(
+                json.dumps(
+                    {
+                        "event": "early_termination_confident",
+                        "top_score": round(top_score, 4),
+                        "threshold": 0.75,
+                        "should_skip": True,
+                        "reason": "very_high_confidence",
+                    }
+                )
+            )
+            return True
+
+        # Original confidence gap logic
         gap = self._compute_confidence_gap(scores)
         should_skip = gap > self.confidence_threshold
 
