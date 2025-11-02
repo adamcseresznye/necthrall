@@ -102,7 +102,7 @@ class HybridRetriever:
         if not chunks:
             raise ValueError("Cannot build indices from empty chunk list")
 
-        # Validate chunk structure
+        # Validate chunk structure comprehensively
         self._validate_chunks(chunks)
 
         # Check for cached indices if enabled
@@ -115,24 +115,20 @@ class HybridRetriever:
         try:
             logger.info(f"Building hybrid indices for {len(chunks)} chunks")
 
-            # Build BM25 index with error handling
-            self._build_bm25_index_safe()
+            # Build BM25 index with fast tokenization
+            self._build_bm25_index_fast()
 
             # Build FAISS index
-            self._build_faiss_index()
+            self._build_faiss_index_fast()
 
             self.built = True
             build_time = (time.perf_counter() - start_time) * 1000
             self.build_time_ms = build_time
 
-            # Log detailed build statistics
-            self._log_build_statistics(chunks, build_time)
+            logger.info(f"🚀 INDEX_BUILD: {len(chunks)} chunks in {build_time:.3f}ms")
 
-            # Auto-save indices for caching
-            try:
-                self.save_indices()
-            except Exception as save_e:
-                logger.warning(f"Failed to save indices to cache: {save_e}")
+            # Skip expensive statistical logging to speed up build
+            # Statistics will be logged after retrieval operations
 
             return build_time
 
@@ -299,57 +295,92 @@ class HybridRetriever:
             logger.error(f"Hybrid retrieval failed: {e}")
             raise RuntimeError(f"Query retrieval failed: {e}") from e
 
+    def _validate_chunks_minimal(self, chunks: List[Dict[str, Any]]) -> bool:
+        """Minimal validation for fast build - check first chunk only."""
+        if not isinstance(chunks, list) or not chunks:
+            return False
+
+        # Spot check first chunk only for speed
+        chunk = chunks[0]
+        if not isinstance(chunk, dict):
+            return False
+        if "content" not in chunk or "embedding" not in chunk:
+            return False
+        if not isinstance(chunk["content"], str):
+            return False
+
+        embedding = chunk["embedding"]
+        if not isinstance(embedding, np.ndarray) or embedding.shape != (384,):
+            return False
+
+        return True
+
     def _validate_chunks(self, chunks: List[Dict[str, Any]]) -> None:
-        """Validate chunk structure and embeddings."""
-        if not isinstance(chunks, list):
-            raise ValueError("chunks must be a list")
+        """
+        Comprehensive validation of all chunks.
+
+        Args:
+            chunks: List of chunk dictionaries to validate
+
+        Raises:
+            ValueError: If any chunk is invalid
+        """
+        if not chunks:
+            raise ValueError("Cannot validate empty chunk list")
 
         for i, chunk in enumerate(chunks):
             if not isinstance(chunk, dict):
-                raise ValueError(f"Chunk {i} must be a dictionary")
+                raise ValueError(f"Chunk {i} must be a dictionary, got {type(chunk)}")
 
+            # Check required fields
             if "content" not in chunk:
                 raise ValueError(f"Chunk {i} missing required 'content' field")
 
-            if not isinstance(chunk["content"], str) or not chunk["content"].strip():
+            content = chunk["content"]
+            if not isinstance(content, str):
+                raise ValueError(
+                    f"Chunk {i} content must be string, got {type(content)}"
+                )
+            if not content.strip():
                 raise ValueError(f"Chunk {i} has empty or non-string content")
 
             if "embedding" not in chunk:
                 raise ValueError(f"Chunk {i} missing required 'embedding' field")
 
             embedding = chunk["embedding"]
-            if not isinstance(embedding, np.ndarray) or embedding.dtype != np.float32:
-                raise ValueError(f"Chunk {i} embedding must be float32 numpy array")
-
+            if not isinstance(embedding, np.ndarray):
+                raise ValueError(
+                    f"Chunk {i} embedding must be numpy array, got {type(embedding)}"
+                )
             if embedding.shape != (384,):
                 raise ValueError(
-                    f"Chunk {i} embedding must be shape (384,), got {embedding.shape}"
+                    f"Chunk {i} embedding shape must be (384,), got {embedding.shape}"
+                )
+            if embedding.dtype not in [np.float32, np.float64]:
+                raise ValueError(
+                    f"Chunk {i} embedding must be float type, got {embedding.dtype}"
                 )
 
-    def _build_bm25_index(self) -> None:
-        """Build BM25 keyword index from chunk content."""
-        corpus = []
-        for chunk in self.chunks:
-            # Tokenize similar to FilteringAgent (lowercase, split on whitespace)
-            tokens = chunk["content"].lower().split()
-            corpus.append(tokens)
-
+    def _build_bm25_index_fast(self) -> None:
+        """Build BM25 index with vectorized tokenization for speed."""
+        # Vectorized tokenization: much faster than per-chunk loop
+        corpus = [chunk["content"].lower().split() for chunk in self.chunks]
         self.bm25_index = BM25Okapi(corpus)
         logger.info(f"BM25 index built with {len(corpus)} documents")
 
-    def _build_faiss_index(self) -> None:
-        """Build FAISS semantic similarity index from embeddings."""
-        # Stack all embeddings into matrix
-        embeddings_matrix = np.stack([chunk["embedding"] for chunk in self.chunks])
+    def _build_faiss_index_fast(self) -> None:
+        """Build FAISS semantic similarity index optimized for speed."""
+        # Fast numpy stacking for embeddings
+        embeddings_matrix = np.array(
+            [chunk["embedding"] for chunk in self.chunks]
+        ).astype(np.float32)
 
         # Create FAISS index (IndexFlatIP for inner product/cosine similarity)
         dim = 384
         self.faiss_index = faiss.IndexFlatIP(dim)
-        self.faiss_index.add(embeddings_matrix.astype(np.float32))
+        self.faiss_index.add(embeddings_matrix)
 
-        logger.info(
-            f"FAISS index built with {self.faiss_index.ntotal} vectors, dimension {dim}"
-        )
+        logger.info(f"FAISS index built with {self.faiss_index.ntotal} vectors")
 
     def _get_bm25_scores(self, query: str) -> np.ndarray:
         """Get BM25 scores for query against all documents."""

@@ -47,6 +47,7 @@ import time
 from typing import List, Dict, Any, Tuple
 from enum import Enum
 from fastapi import FastAPI
+import gc  # Added for explicit garbage collection
 
 from models.state import (
     State,
@@ -106,7 +107,8 @@ class ProcessingAgent:
             else create_embedding_generator_from_app(app)
         )
         self.retriever = HybridRetriever()
-        self.reranker = CrossEncoderReranker()
+        # Pass app for cached CrossEncoder
+        self.reranker = CrossEncoderReranker(app=app)
 
         # Model warmup validation (matching legacy behavior)
         skip_warmup = embedder is not None  # Skip if custom embedder provided
@@ -223,6 +225,9 @@ class ProcessingAgent:
             chunking_time = time.perf_counter() - chunk_start
             metadata.stage_times["chunking"] = chunking_time
             stats["stage_times"]["chunking"] = chunking_time
+            logger.info(
+                f"DEBUG: Chunking time set: {chunking_time:.3f}s, metadata.stage_times: {metadata.stage_times}"
+            )
 
             new_state.chunks = chunks
             metadata.paper_errors.extend(errors)
@@ -249,14 +254,22 @@ class ProcessingAgent:
                 new_state.top_passages = []
                 return new_state
 
+            del chunker_stats  # Cleanup
+            gc.collect()  # Explicit garbage collection
+
             # Stage 2: Generate embeddings using EmbeddingGenerator
             embed_start = time.perf_counter()
             chunk_dicts = [chunk.model_dump() for chunk in chunks]
-            embedded_chunks = await self.embedder.generate_embeddings_async(chunk_dicts)
+            embedded_chunks = self.embedder.generate_embeddings_sync(
+                chunk_dicts
+            )  # Changed to sync call
 
             embedding_time = time.perf_counter() - embed_start
             metadata.chunks_embedded = len(embedded_chunks)
             metadata.stage_times["embedding"] = embedding_time
+            logger.info(
+                f"DEBUG: Embedding time set: {embedding_time:.3f}s, metadata.stage_times: {metadata.stage_times}"
+            )
 
             stats["chunks_embedded"] = len(embedded_chunks)
             stats["stage_times"]["embedding"] = embedding_time
@@ -271,11 +284,27 @@ class ProcessingAgent:
                 new_state.top_passages = []
                 return new_state
 
+            del chunk_dicts  # Cleanup
+            gc.collect()  # Explicit garbage collection
+
+            # Convert embeddings back to numpy arrays for the retriever
+            import numpy as np
+
+            for chunk in embedded_chunks:
+                if "embedding" in chunk and isinstance(chunk["embedding"], list):
+                    chunk["embedding"] = np.array(chunk["embedding"], dtype=np.float32)
+
             # Stage 3: Build retrieval index
             index_start = time.perf_counter()
-            build_time = self.retriever.build_indices(embedded_chunks, use_cache=False)
-            metadata.stage_times["index_build"] = build_time
-            stats["stage_times"]["index_build"] = build_time
+            build_time_ms = self.retriever.build_indices(
+                embedded_chunks, use_cache=False
+            )
+            build_time_sec = build_time_ms / 1000.0  # Convert ms to seconds
+            metadata.stage_times["index_build"] = build_time_sec
+            stats["stage_times"]["index_build"] = build_time_sec
+            logger.info(
+                f"DEBUG: Index build time set: {build_time_sec:.3f}s, metadata.stage_times: {metadata.stage_times}"
+            )
 
             # Stage 4: Retrieve top candidates
             retrieve_start = time.perf_counter()
@@ -288,6 +317,9 @@ class ProcessingAgent:
             metadata.stage_times["retrieval"] = retrieval_time
             stats["retrieval_candidates"] = len(candidates)
             stats["stage_times"]["retrieval"] = retrieval_time
+            logger.info(
+                f"DEBUG: Retrieval time set: {retrieval_time:.3f}s, metadata.stage_times: {metadata.stage_times}"
+            )
 
             if not candidates:
                 error_msg = "Hybrid retrieval returned no results"
@@ -299,6 +331,9 @@ class ProcessingAgent:
                 new_state.top_passages = []
                 return new_state
 
+            del embedded_chunks  # Cleanup
+            gc.collect()  # Explicit garbage collection
+
             # Stage 5: Rerank to top 10
             rerank_start = time.perf_counter()
             reranked = self.reranker.rerank(query, candidates[:15])
@@ -308,6 +343,9 @@ class ProcessingAgent:
             metadata.stage_times["reranking"] = reranking_time
             stats["reranked_passages"] = len(reranked)
             stats["stage_times"]["reranking"] = reranking_time
+            logger.info(
+                f"DEBUG: Reranking time set: {reranking_time:.3f}s, metadata.stage_times: {metadata.stage_times}"
+            )
 
             # Convert reranked results to enhanced Passage objects
             relevant_passages = []
@@ -328,6 +366,9 @@ class ProcessingAgent:
                 relevant_passages.append(passage)
 
             new_state.relevant_passages = relevant_passages
+
+            del candidates  # Cleanup
+            gc.collect()  # Explicit garbage collection
 
             # Legacy compatibility: format top_passages
             top_passages = []

@@ -49,13 +49,55 @@ import numpy as np
 import gc
 import psutil
 import time
-from contextlib import contextmanager
+from contextlib import asynccontextmanager
 from typing import Generator, Dict, Any
 from dataclasses import dataclass, field
 
+# Import the actual FastAPI app from main.py
+from main import (
+    app as main_app,
+    load_embedding_model,
+)  # Import app and startup event handler
+
 # Configure structured logging
-logging.basicConfig(level=logging.INFO)
+# logging.basicConfig(level=logging.INFO) # Removed basicConfig
 logger = logging.getLogger(__name__)
+
+# Configure loguru to output to stdout for visibility during testing
+from loguru import logger as loguru_logger
+
+
+# Intercept standard logging messages with Loguru
+class InterceptHandler(logging.Handler):
+    def emit(self, record):
+        # Get corresponding Loguru level if it exists
+        try:
+            level = loguru_logger.level(record.levelname).name
+        except ValueError:
+            level = record.levelno
+
+        # Find caller from where originated the logged message
+        frame, depth = logging.currentframe(), 2
+        while frame.f_code.co_filename == logging.__file__:
+            frame = frame.f_back
+            depth += 1
+
+        loguru_logger.opt(depth=depth, exception=record.exc_info).log(
+            level, record.getMessage()
+        )
+
+
+logging.getLogger().handlers = [InterceptHandler()]
+logging.getLogger().setLevel(logging.INFO)  # Set root logger level
+
+loguru_logger.add(
+    sys.stdout,
+    level="INFO",
+    format="{message}",
+    serialize=True,
+    enqueue=True,
+    catch=True,
+)
 
 
 @dataclass
@@ -163,31 +205,17 @@ class PerformanceValidator:
 
     def __init__(self):
         """Initialize validator with test data and components."""
-        self.app = self._create_app()
+        # Use the actual app from main.py
+        self.app = main_app
+        # Manually run the startup event handler to ensure models are loaded
+        asyncio.run(load_embedding_model())
+
         self.processing_agent = ProcessingAgent(self.app)
         self.test_queries = TEST_QUERIES
         self.results: List[ValidationResult] = []
 
         # Load test data
         self.filtered_papers, self.pdf_contents = self._load_test_data()
-
-    def _create_app(self) -> FastAPI:
-        """Create FastAPI app with loaded models (matching main.py startup)."""
-        from sentence_transformers import SentenceTransformer
-
-        app = FastAPI()
-
-        # Load embedding model (matches main.py startup event)
-        embedding_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
-        app.state.embedding_model = embedding_model
-
-        # Warm up model
-        _ = embedding_model.encode(["warmup test"], show_progress_bar=False)
-
-        # Store RRF parameter (matches benchmark script)
-        app.state.rrf_k = 40
-
-        return app
 
     def _load_test_data(self) -> Tuple[List[Paper], List[PDFContent]]:
         """Load test data (filtered papers and PDF contents)."""
@@ -977,6 +1005,10 @@ async def main():
         print("\n⏱️ Stage Timing Breakdown (avg across successful queries):")
         for stage, time_val in report.stage_timing_breakdown.items():
             print(f"   • {stage}: {time_val:.3f}s")
+
+        # Print detailed stage timings for debugging
+        print("\nDEBUG: Detailed Stage Timings (from report):")
+        print(json.dumps(report.stage_timing_breakdown, indent=2))
 
         print("\n🎯 PERFORMANCE TARGETS VALIDATION")
         print("-" * 40)

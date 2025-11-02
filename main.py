@@ -122,29 +122,41 @@ async def load_embedding_model():
             "sentence-transformers not available, skipping embedding model loading"
         )
         app.state.embedding_model = None
+        app.state.cross_encoder_model = None  # Also set cross-encoder to None
         return
 
     start_time = time.time()
     logger.info("Loading SentenceTransformer embedding model (all-MiniLM-L6-v2)...")
 
     try:
-        # Load model (downloads from HuggingFace on first run, caches locally afterward)
+        # Load embedding model (downloads from HuggingFace on first run, caches locally afterward)
         embedding_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
-
-        # Store in app.state for global access
         app.state.embedding_model = embedding_model
+        _ = embedding_model.encode(
+            ["test sentence"], show_progress_bar=False
+        )  # Warm up
+        elapsed_embed = time.time() - start_time
+        logger.info(f"✓ Embedding model loaded successfully in {elapsed_embed:.2f}s")
 
-        # Warm up model with a test encoding
-        _ = embedding_model.encode(["test sentence"], show_progress_bar=False)
+        # Load CrossEncoder model
+        from sentence_transformers import CrossEncoder
 
-        elapsed = time.time() - start_time
-        logger.info(f"✓ Embedding model loaded successfully in {elapsed:.2f}s")
+        cross_encoder_start_time = time.time()
+        logger.info(
+            "Loading CrossEncoder model (cross-encoder/ms-marco-MiniLM-L-6-v2)..."
+        )
+        cross_encoder_model = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+        app.state.cross_encoder_model = cross_encoder_model
+        _ = cross_encoder_model.predict(
+            [("test query", "test passage")], show_progress_bar=False
+        )  # Warm up
+        elapsed_cross = time.time() - cross_encoder_start_time
+        logger.info(f"✓ CrossEncoder model loaded successfully in {elapsed_cross:.2f}s")
 
     except Exception as e:
-        logger.error(f"✗ Failed to load embedding model: {e}")
-        # Don't raise exception - allow app to start but log failure
-        # Agents should check if model exists before using
+        logger.error(f"✗ Failed to load models: {e}")
         app.state.embedding_model = None
+        app.state.cross_encoder_model = None
 
 
 @app.on_event("shutdown")
