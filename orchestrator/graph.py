@@ -9,11 +9,9 @@ from agents.deduplication_agent import DeduplicationAgent
 from agents.fallback_refinement_agent import FallbackRefinementAgent
 from utils.logging_decorator import log_state_transition
 from typing import Dict, Any
-import logging
+from loguru import logger
 import json
 import asyncio
-
-logger = logging.getLogger(__name__)
 
 
 def should_refine_query(state: State) -> str:

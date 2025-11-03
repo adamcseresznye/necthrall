@@ -6,6 +6,9 @@ from agents.acquisition import AcquisitionAgent
 import aiohttp
 
 
+pytestmark = [pytest.mark.integration, pytest.mark.slow]
+
+
 @pytest.fixture
 def agent():
     """Provides a default AcquisitionAgent for tests."""

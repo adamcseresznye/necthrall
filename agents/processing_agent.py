@@ -1,6 +1,6 @@
 import asyncio
-import logging
 import time
+from loguru import logger
 from typing import List, Dict, Any, Tuple
 from fastapi import FastAPI
 
@@ -10,7 +10,7 @@ from utils.embedding_manager import EmbeddingManager
 from retrieval.hybrid_retriever import HybridRetriever
 from retrieval.reranker import CrossEncoderReranker
 
-logger = logging.getLogger(__name__)
+# using Loguru logger
 
 
 class ProcessingAgent:

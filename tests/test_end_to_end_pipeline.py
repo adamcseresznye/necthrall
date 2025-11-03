@@ -9,6 +9,8 @@ sys.path.insert(0, os.path.abspath(".."))
 
 from scripts.test_end_to_end_pipeline import main
 
+pytestmark = [pytest.mark.integration, pytest.mark.slow]
+
 
 @pytest.mark.timeout(8)  # 8 second timeout (with 10% buffer over 4s target)
 def test_end_to_end_pipeline_functionality():

@@ -1,11 +1,11 @@
 import time
-import logging
+from loguru import logger
 import json
 from datetime import datetime
 from functools import wraps
 from models.state import State
 
-logger = logging.getLogger(__name__)
+# using loguru logger
 
 
 def custom_json_serializer(obj):

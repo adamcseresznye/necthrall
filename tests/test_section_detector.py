@@ -1,4 +1,6 @@
 import pytest
+
+pytestmark = [pytest.mark.unit]
 from utils.section_detector import SectionDetector
 
 

@@ -1,13 +1,13 @@
 from sentence_transformers import CrossEncoder
 import time
-import logging
 import asyncio
+from loguru import logger
 from typing import List, Dict, Any, Optional, Tuple, Union
 from concurrent.futures import ThreadPoolExecutor
 import psutil
 import json
 
-logger = logging.getLogger(__name__)
+# using loguru's logger
 
 
 class CrossEncoderReranker:

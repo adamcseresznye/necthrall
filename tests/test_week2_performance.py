@@ -20,6 +20,8 @@ from typing import Dict, Any
 
 from scripts.performance_validation import PerformanceValidator, TEST_QUERIES
 
+pytestmark = [pytest.mark.performance, pytest.mark.slow]
+
 
 class TestWeek2PerformanceValidation:
     """Comprehensive performance validation tests for Week 2 targets."""

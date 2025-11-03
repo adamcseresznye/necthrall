@@ -3,6 +3,8 @@ Tests for FastAPI startup event and embedding model caching functionality.
 """
 
 import pytest
+
+pytestmark = [pytest.mark.unit]
 from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock
 import time

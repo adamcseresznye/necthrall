@@ -5,6 +5,9 @@ from models.state import State, Paper, PDFContent
 from agents.acquisition import AcquisitionAgent
 
 
+pytestmark = [pytest.mark.integration, pytest.mark.slow]
+
+
 @pytest.mark.asyncio
 async def test_agent_handles_mixed_success_and_failure():
     """

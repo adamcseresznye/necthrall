@@ -19,7 +19,7 @@ Usage:
 
 import asyncio
 import json
-import logging
+from loguru import logger
 import os
 import psutil
 import random
@@ -35,16 +35,10 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(script_dir)
 sys.path.insert(0, project_root)
 
-# Configure structured logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler("benchmark_agent_comparison.log", mode="w"),
-    ],
+# Use Loguru for structured logging; file sink can be added as needed
+logger.add(
+    "benchmark_agent_comparison.log", rotation="10 MB", level="INFO", serialize=False
 )
-logger = logging.getLogger(__name__)
 
 # Direct imports for standalone benchmarking
 from agents.processing_agent import ProcessingAgent as LegacyProcessingAgent
@@ -618,7 +612,9 @@ async def main():
     args = parser.parse_args()
 
     if args.detailed:
-        logging.getLogger().setLevel(logging.DEBUG)
+        # Enable debug level on Loguru by reconfiguring stderr sink
+        logger.remove()
+        logger.add(sys.stderr, level="DEBUG")
 
     print("🚀 Starting Agent Comparison Performance Benchmark")
     print(f"📊 Iterations: {args.iterations}")

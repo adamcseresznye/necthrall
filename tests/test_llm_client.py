@@ -6,6 +6,9 @@ from google.api_core.exceptions import ResourceExhausted
 from utils.llm_client import LLMClient
 
 
+pytestmark = [pytest.mark.integration]
+
+
 @patch("utils.llm_client.ChatGoogleGenerativeAI")
 @patch("utils.llm_client.ChatGroq")
 def test_primary_llm_success(mock_groq, mock_gemini):
@@ -69,6 +72,7 @@ def test_both_llms_fail(mock_groq, mock_gemini):
 
     assert "Groq API Error" in str(context.value)
 
+
 @patch("utils.llm_client.ChatGoogleGenerativeAI")
 @patch("utils.llm_client.ChatGroq")
 def test_rate_limit_error(mock_groq, mock_gemini):
@@ -89,6 +93,7 @@ def test_rate_limit_error(mock_groq, mock_gemini):
     mock_groq_instance.invoke.assert_called_once()
     # Check that the response is from the fallback
     assert response["content"] == "Groq response"
+
 
 @patch("utils.llm_client.ChatGoogleGenerativeAI")
 @patch("utils.llm_client.ChatGroq")

@@ -4,6 +4,8 @@ from agents.acquisition import (
     PDFParsingError,
     InvalidContentError,
 )
+
+pytestmark = [pytest.mark.integration, pytest.mark.slow]
 import fitz
 from models.state import PDFContent
 

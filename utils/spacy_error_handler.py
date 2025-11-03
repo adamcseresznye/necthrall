@@ -26,7 +26,7 @@ Usage:
     processed = handler.process_text(text, operation="tokenize")
 """
 
-import logging
+from loguru import logger
 import time
 from typing import Optional, Dict, Any, List, Union
 from contextlib import contextmanager
@@ -47,7 +47,7 @@ except ImportError as e:
     SPACY_AVAILABLE = False
     SPACY_IMPORT_ERROR = str(e)
 
-logger = logging.getLogger(__name__)
+# Using Loguru's global logger; instance-specific context is bound per-instance
 
 
 class SpaCyError(Enum):
@@ -93,7 +93,8 @@ class SpaCyErrorHandler:
         self.fallback_model = fallback_model or "en_core_web_md"
         self.load_timeout = load_timeout
         self.enable_logging = enable_logging
-        self.log_level = getattr(logging, log_level.upper(), logging.DEBUG)
+        # Store desired log level name for potential centralized configuration
+        self.log_level = log_level.upper()
 
         # State tracking
         self.nlp: Optional[Any] = None
@@ -115,33 +116,20 @@ class SpaCyErrorHandler:
         # Log initialization
         self._log_initialization()
 
-    def _setup_logger(self) -> logging.Logger:
-        """Setup structured logger for spaCy operations."""
-        logger = logging.getLogger(f"{__name__}.{id(self)}")
-        logger.setLevel(self.log_level)
+    def _setup_logger(self):
+        """Return a Loguru-bound logger for this SpaCy handler instance.
 
-        if self.enable_logging and not logger.handlers:
-            # JSON formatter for structured logging
-            formatter = logging.Formatter(
-                json.dumps(
-                    {
-                        "timestamp": "%(asctime)s",
-                        "level": "%(levelname)s",
-                        "component": "spacy_error_handler",
-                        "operation": "%(funcName)s",
-                        "message": "%(message)s",
-                        "model_name": self.model_name,
-                        "fallback_active": self.fallback_active,
-                    }
-                )
-            )
+        We avoid adding sinks here to prevent duplicate outputs when multiple
+        instances are created. Global sinks and formatting should be configured
+        centrally (e.g., in `main.py` or `utils/logging_setup.py`).
+        """
+        bound_logger = logger.bind(
+            component="spacy_error_handler",
+            instance_id=id(self),
+            model_name=self.model_name,
+        )
 
-            # Console handler
-            handler = logging.StreamHandler()
-            handler.setFormatter(formatter)
-            logger.addHandler(handler)
-
-        return logger
+        return bound_logger
 
     def _log_initialization(self) -> None:
         """Log initialization parameters for debugging."""
@@ -154,12 +142,13 @@ class SpaCyErrorHandler:
 
         if not SPACY_AVAILABLE:
             init_info["import_error"] = SPACY_IMPORT_ERROR
+            # Loguru accepts arbitrary kwargs which appear under record.extra
             self.logger.warning(
                 "spaCy not available, will use regex fallback",
-                extra={"spacy_error": SPACY_IMPORT_ERROR},
+                spacy_error=SPACY_IMPORT_ERROR,
             )
 
-        self.logger.info("SpaCyErrorHandler initialized", extra=init_info)
+        self.logger.info("SpaCyErrorHandler initialized", **init_info)
 
     @contextmanager
     def operation_context(self, operation: str, text_length: int = 0):
@@ -204,6 +193,30 @@ class SpaCyErrorHandler:
                 self.logger.info(f"Loading spaCy model: {self.model_name}")
                 self.nlp = spacy.load(self.model_name)
 
+                # Ensure sentence boundary component (sentencizer) is present.
+                try:
+                    if "sentencizer" not in getattr(self.nlp, "pipe_names", []):
+                        # Prefer adding by string name; fall back to Sentencizer class if needed
+                        try:
+                            self.nlp.add_pipe("sentencizer")
+                            self.logger.info("Added 'sentencizer' to spaCy pipeline")
+                        except Exception:
+                            try:
+                                from spacy.pipeline import Sentencizer
+
+                                self.nlp.add_pipe(Sentencizer())
+                                self.logger.info(
+                                    "Added Sentencizer() to spaCy pipeline"
+                                )
+                            except Exception as se:
+                                self.logger.warning(
+                                    "Could not add sentencizer to spaCy pipeline",
+                                    error=str(se),
+                                )
+                except Exception:
+                    # Non-fatal: continue even if we cannot manipulate the pipeline
+                    pass
+
                 load_time = time.perf_counter() - load_start
                 self.performance_stats["model_load_time"] = load_time
 
@@ -218,7 +231,7 @@ class SpaCyErrorHandler:
                 try:
                     self.logger.warning(
                         f"Trying fallback model: {self.fallback_model}",
-                        extra={"original_error": str(e)},
+                        original_error=str(e),
                     )
 
                     with self.operation_context("fallback_model_load", 0):
@@ -239,10 +252,8 @@ class SpaCyErrorHandler:
             # All loading attempts failed
             self.logger.error(
                 "All spaCy model loading attempts failed, system will use regex fallback",
-                extra={
-                    "errors": [str(e) for e in self.errors_encountered],
-                    "load_time": time.perf_counter() - load_start,
-                },
+                errors=[str(e) for e in self.errors_encountered],
+                load_time=time.perf_counter() - load_start,
             )
 
             return None
@@ -368,9 +379,8 @@ class SpaCyErrorHandler:
             "details": SPACY_IMPORT_ERROR,
             "timestamp": time.time(),
         }
-
         self.errors_encountered.append(error_info)
-        self.logger.error("spaCy import failed, using regex fallback", extra=error_info)
+        self.logger.error("spaCy import failed, using regex fallback", **error_info)
 
     def _handle_model_load_error(self, error: Exception, model_name: str) -> None:
         """Handle spaCy model loading errors."""
@@ -384,9 +394,8 @@ class SpaCyErrorHandler:
             "error_class": error.__class__.__name__,
             "timestamp": time.time(),
         }
-
         self.errors_encountered.append(error_info)
-        self.logger.error(f"spaCy model load failed: {model_name}", extra=error_info)
+        self.logger.error(f"spaCy model load failed: {model_name}", **error_info)
 
     def _handle_fallback_failure(self, error: Exception) -> None:
         """Handle fallback model loading failure."""
@@ -396,9 +405,8 @@ class SpaCyErrorHandler:
             "original_error": str(error),
             "timestamp": time.time(),
         }
-
         self.errors_encountered.append(error_info)
-        self.logger.error("Fallback model loading failed", extra=error_info)
+        self.logger.error("Fallback model loading failed", **error_info)
 
     def _handle_encoding_error(
         self, error_msg: str, operation: str, text_length: int
@@ -411,9 +419,8 @@ class SpaCyErrorHandler:
             "text_length": text_length,
             "timestamp": time.time(),
         }
-
         self.errors_encountered.append(error_info)
-        self.logger.warning(f"Text encoding error in {operation}", extra=error_info)
+        self.logger.warning(f"Text encoding error in {operation}", **error_info)
 
     def _handle_processing_error(
         self, error: Exception, operation: str, text_length: int
@@ -430,9 +437,8 @@ class SpaCyErrorHandler:
             "error_class": error.__class__.__name__,
             "timestamp": time.time(),
         }
-
         self.errors_encountered.append(error_info)
-        self.logger.warning(f"spaCy processing error in {operation}", extra=error_info)
+        self.logger.warning(f"spaCy processing error in {operation}", **error_info)
 
     def _handle_operation_error(
         self, error: Exception, operation: str, operation_id: str
@@ -449,9 +455,8 @@ class SpaCyErrorHandler:
             "error_class": error.__class__.__name__,
             "timestamp": time.time(),
         }
-
         self.errors_encountered.append(error_info)
-        self.logger.error(f"Operation error in {operation}", extra=error_info)
+        self.logger.error(f"Operation error in {operation}", **error_info)
 
     def _classify_error(self, error: Exception) -> SpaCyError:
         """Classify exception type for better error handling."""
@@ -476,13 +481,11 @@ class SpaCyErrorHandler:
         if self.enable_logging:
             self.logger.debug(
                 f"Starting {operation}",
-                extra={
-                    "operation": operation,
-                    "operation_id": operation_id,
-                    "text_length": text_length,
-                    "model_loaded": self.nlp is not None,
-                    "fallback_active": self.fallback_active,
-                },
+                operation=operation,
+                operation_id=operation_id,
+                text_length=text_length,
+                model_loaded=self.nlp is not None,
+                fallback_active=self.fallback_active,
             )
 
     def _log_operation_success(
@@ -494,29 +497,26 @@ class SpaCyErrorHandler:
         if self.enable_logging:
             self.logger.debug(
                 f"Completed {operation}",
-                extra={
-                    "operation": operation,
-                    "operation_id": operation_id,
-                    "duration_seconds": round(duration, 4),
-                    "performance_ok": duration < 1.0,  # Sub-second target
-                },
+                operation=operation,
+                operation_id=operation_id,
+                duration_seconds=round(duration, 4),
+                performance_ok=duration < 1.0,  # Sub-second target
             )
 
     def _log_model_success(
         self, model_name: str, load_time: float, fallback: bool = False
     ) -> None:
         """Log successful model loading."""
+        spacy_version = (
+            getattr(spacy, "__version__", "unknown") if spacy else "unavailable"
+        )
         self.logger.info(
             f"spaCy model loaded successfully: {model_name}",
-            extra={
-                "model_name": model_name,
-                "load_time_seconds": round(load_time, 4),
-                "is_fallback": fallback,
-                "fallback_active": self.fallback_active,
-                "spacy_version": (
-                    getattr(spacy, "__version__", "unknown") if spacy else "unavailable"
-                ),
-            },
+            model_name=model_name,
+            load_time_seconds=round(load_time, 4),
+            is_fallback=fallback,
+            fallback_active=self.fallback_active,
+            spacy_version=spacy_version,
         )
 
     def get_error_summary(self) -> Dict[str, Any]:

@@ -1,4 +1,6 @@
 import pytest
+
+pytestmark = [pytest.mark.unit]
 from pydantic import ValidationError
 from models.state import State, Paper, Passage, Score
 

@@ -1,4 +1,6 @@
 import pytest
+
+pytestmark = [pytest.mark.unit]
 import time
 import numpy as np
 from unittest.mock import MagicMock, patch, AsyncMock
@@ -688,7 +690,7 @@ class TestCrossEncoderReranker:
 
     def test_logging_output_structure(self, sample_passages):
         """Test that reranking completes without logging errors."""
-        import logging
+        from loguru import logger
 
         reranker = CrossEncoderReranker()
 

@@ -3,7 +3,7 @@ import time
 import sys
 import os
 import json
-import logging
+from loguru import logger
 from typing import List, Dict, Any
 import numpy as np
 import torch
@@ -21,9 +21,11 @@ from utils.embedding_manager import EmbeddingManager
 from retrieval.hybrid_retriever import HybridRetriever
 from retrieval.reranker import CrossEncoderReranker
 
-# Configure structured logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Configure structured logging (Loguru)
+logger.remove()
+logger.add(sys.stderr, level="INFO")
+
+pytestmark = [pytest.mark.performance, pytest.mark.slow]
 
 
 @pytest.fixture
@@ -236,8 +238,9 @@ def run_pipeline_on_text(
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(42)
 
-    # Configure logging to capture warnings
-    logging.basicConfig(level=logging.WARNING)
+    # Configure logging to capture warnings (Loguru)
+    logger.remove()
+    logger.add(sys.stderr, level="WARNING")
 
     # Initialize components
     section_detector = SectionDetector()

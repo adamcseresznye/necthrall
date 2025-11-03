@@ -42,7 +42,6 @@ except Exception as e:
     # Don't fail - let the agent attempt to load them later
 
 import asyncio
-import logging
 import time
 from typing import List, Dict, Any, Tuple
 from enum import Enum
@@ -61,7 +60,7 @@ from rag.embeddings import create_embedding_generator_from_app
 from retrieval.hybrid_retriever import HybridRetriever
 from retrieval.reranker import CrossEncoderReranker
 
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 class ProcessingErrorType(str, Enum):
@@ -308,9 +307,32 @@ class ProcessingAgent:
 
             # Stage 4: Retrieve top candidates
             retrieve_start = time.perf_counter()
-            candidates = self.retriever.retrieve(
-                query, self.app.state.embedding_model.encode([query])[0], top_k=15
-            )
+            # Obtain query embedding and coerce to numpy array to guarantee
+            # compatibility with the hybrid retriever which expects a
+            # np.ndarray with shape (384,).
+            try:
+                raw_q_emb = self.app.state.embedding_model.encode([query])[0]
+            except Exception:
+                # Some models/stubs might raise when called synchronously; try
+                # running in a thread as a fallback.
+                import asyncio
+
+                raw_q_emb = await asyncio.to_thread(
+                    self.app.state.embedding_model.encode, [query]
+                )
+                raw_q_emb = raw_q_emb[0]
+
+            import numpy as _np
+
+            if isinstance(raw_q_emb, list):
+                q_emb = _np.asarray(raw_q_emb, dtype=_np.float32)
+            elif hasattr(raw_q_emb, "shape"):
+                q_emb = _np.asarray(raw_q_emb, dtype=_np.float32)
+            else:
+                # Last-resort coercion
+                q_emb = _np.asarray(list(raw_q_emb), dtype=_np.float32)
+
+            candidates = self.retriever.retrieve(query, q_emb, top_k=15)
             retrieval_time = time.perf_counter() - retrieve_start
 
             metadata.retrieval_candidates = len(candidates)
@@ -449,6 +471,17 @@ class ProcessingAgent:
             export_data["timestamp"] = time.time()
 
             import json
+
+            # Default to results/week2/performance_log.json under project root to avoid
+            # polluting repository root. Compute project root relative to this file.
+            if log_file == "performance_log.json":
+                import os
+
+                this_file_dir = os.path.dirname(os.path.abspath(__file__))
+                project_root = os.path.dirname(this_file_dir)
+                results_dir = os.path.join(project_root, "results", "week2")
+                os.makedirs(results_dir, exist_ok=True)
+                log_file = os.path.join(results_dir, "performance_log.json")
 
             with open(log_file, "a", encoding="utf-8") as f:
                 f.write(json.dumps(export_data, ensure_ascii=False) + "\n")

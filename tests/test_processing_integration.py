@@ -2,6 +2,9 @@ import pytest
 import time
 import psutil
 import numpy as np
+
+pytestmark = [pytest.mark.integration, pytest.mark.slow]
+
 from unittest.mock import Mock, patch, AsyncMock
 import asyncio
 from typing import List, Dict, Any

@@ -251,6 +251,34 @@ necthrall-lite/
 - Run: `python -m necthrall_lite`  
 - Test: `pytest -q`  
 - Lint/Format: add pre-commit, ruff/black if desired
+- Run: `python -m necthrall_lite`  
+
+### Running tests
+
+Use the pytest entry on your activated virtualenv. The project uses markers to split suites so you can run only the fast or longer tests:
+
+- Run the fast unit tests only:
+
+```
+pytest -m "unit" -q
+```
+
+- Run the integration tests only (excludes tests marked `performance` or `slow` by default):
+
+```
+pytest -m "integration" -q
+```
+
+- Run performance/benchmark tests (long-running):
+
+```
+pytest -m "performance" -q
+```
+
+Notes:
+- These commands assume your virtualenv is activated (so `pytest` refers to the environment's pytest). You said you prefer not to use `python -m pytest` — the above uses the plain `pytest` entry as requested.
+- CI scripts often prefer the explicit `python -m pytest` form for reproducibility; locally `pytest` is fine when the venv is active.
+- By default `performance` and `slow` tests are skipped in `pytest.ini` unless you explicitly include them in marker expressions.
 
 ***
 

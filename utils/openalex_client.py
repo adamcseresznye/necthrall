@@ -1,13 +1,11 @@
 import requests
 import time
-import logging
 import json
+from loguru import logger
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Use loguru for structured logging
 
 
 @dataclass

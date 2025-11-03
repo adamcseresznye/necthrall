@@ -6,15 +6,15 @@ optimized for CPU processing with async support and memory-efficient batching.
 """
 
 import asyncio
-import logging
 import numpy as np
+from loguru import logger
 import time
 from typing import List, Dict, Any, Optional, Tuple
 from sentence_transformers import SentenceTransformer
 from fastapi import FastAPI
 import json
 
-logger = logging.getLogger(__name__)
+# using loguru logger
 
 
 class EmbeddingGenerator:
@@ -80,19 +80,39 @@ class EmbeddingGenerator:
         Raises:
             RuntimeError: If model is invalid or produces unexpected dimensions
         """
-        if not isinstance(self.embedding_model, SentenceTransformer):
+        # Accept SentenceTransformer instances or any duck-typed model that
+        # exposes an `encode` method. This allows lightweight test stubs to be
+        # used in performance tests.
+        if not hasattr(self.embedding_model, "encode"):
             raise RuntimeError(f"Invalid model type: {type(self.embedding_model)}")
 
         try:
-            # Quick test embedding
+            # Quick test embedding. Try to request a numpy return first; if the
+            # underlying model doesn't support the convert_to_numpy param (e.g.,
+            # a simple stub), fall back to the basic encode call and coerce.
             test_text = ["test embedding validation"]
-            test_result = self.embedding_model.encode(
-                test_text, show_progress_bar=False, convert_to_numpy=True
-            )
+            try:
+                test_result = self.embedding_model.encode(
+                    test_text, show_progress_bar=False, convert_to_numpy=True
+                )
+            except TypeError:
+                # Some stub implementations won't accept convert_to_numpy
+                test_result = self.embedding_model.encode(
+                    test_text, show_progress_bar=False
+                )
 
-            if test_result.shape != (1, self.embedding_dim):
+            # Normalize to numpy for shape inspection
+            if hasattr(test_result, "shape"):
+                shape = tuple(test_result.shape)
+            else:
+                import numpy as _np
+
+                test_arr = _np.array(test_result, dtype=_np.float32)
+                shape = tuple(test_arr.shape)
+
+            if len(shape) != 2 or shape[1] != self.embedding_dim:
                 raise RuntimeError(
-                    f"Model produces {test_result.shape[1]} dimensions, expected {self.embedding_dim}"
+                    f"Model produces shape {shape}, expected (1, {self.embedding_dim})"
                 )
 
         except Exception as e:
@@ -117,10 +137,28 @@ class EmbeddingGenerator:
         result_chunks = []
         for chunk, embedding in zip(chunks, embeddings):
             chunk_with_embedding = chunk.copy()
-            chunk_with_embedding["embedding"] = embedding.tolist()
-            chunk_with_embedding["embedding_dim"] = (
-                self.embedding_dim
-            )  # Add embedding_dim
+
+            # Coerce embedding to a numpy array (1-D float32) to ensure downstream
+            # consumers can rely on .shape and numeric dtype. This avoids cases
+            # where test stubs return plain Python lists which do not expose
+            # .shape and caused runtime errors in the pipeline.
+            try:
+                emb_arr = np.asarray(embedding, dtype=np.float32)
+                # If model returned a 2D array for a single embedding (shape (1,dim)),
+                # flatten to 1D
+                if emb_arr.ndim == 2 and emb_arr.shape[0] == 1:
+                    emb_arr = emb_arr.reshape(
+                        emb_arr.shape[1],
+                    )
+                # If unexpectedly >1 dims, try to flatten to 1D
+                if emb_arr.ndim != 1:
+                    emb_arr = emb_arr.flatten()
+            except Exception:
+                # Last-resort coercion
+                emb_arr = np.array(list(embedding), dtype=np.float32)
+
+            chunk_with_embedding["embedding"] = emb_arr
+            chunk_with_embedding["embedding_dim"] = self.embedding_dim
             result_chunks.append(chunk_with_embedding)
 
         # Immediate cleanup

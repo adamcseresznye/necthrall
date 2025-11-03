@@ -2,6 +2,9 @@ import pytest
 from unittest.mock import Mock, AsyncMock, patch
 import asyncio
 from agents.processing_agent import ProcessingAgent
+
+
+pytestmark = [pytest.mark.integration, pytest.mark.slow]
 from models.state import State, Paper, PDFContent
 import numpy as np
 

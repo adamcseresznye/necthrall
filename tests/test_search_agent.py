@@ -1,4 +1,6 @@
 import pytest
+
+pytestmark = [pytest.mark.unit]
 import inspect
 from unittest.mock import patch, MagicMock, Mock
 from agents.search import SearchAgent
