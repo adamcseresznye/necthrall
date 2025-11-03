@@ -4,6 +4,9 @@ from agents.query_optimization_agent import QueryOptimizationAgent
 from models.state import State
 
 
+pytestmark = [pytest.mark.unit]
+
+
 @pytest.fixture
 def agent(mock_llm):
     return QueryOptimizationAgent(llm=mock_llm)

@@ -15,6 +15,11 @@ from .fixtures import (
     processing_integration_state,
 )
 
+from utils.logging_setup import setup_logging
+
+# Ensure tests use the centralized logging configuration
+setup_logging()
+
 # Force CPU-only PyTorch mode
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
@@ -54,6 +59,47 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "performance: marks tests focused on performance benchmarking"
     )
+    config.addinivalue_line(
+        "markers",
+        "unit: marks fast unit tests or can be used with '-m unit' to select fast tests",
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    """
+    Custom selection behavior: treat `-m unit` as "unit OR not (integration or performance or slow)".
+    This lets users run `pytest -m "unit"` and get fast tests even if many tests are unmarked.
+    """
+    mexpr = config.getoption("-m")
+    if not mexpr:
+        return
+
+    # Quick textual check for the unit request; keep simple behaviour for common cases
+    if "unit" in mexpr and "not unit" not in mexpr:
+        selected = []
+        deselected = []
+        for item in items:
+            # If explicitly marked unit, include
+            if item.get_closest_marker("unit"):
+                selected.append(item)
+                continue
+
+            # If explicitly marked as performance/slow, deselect unless also unit
+            if item.get_closest_marker("performance") or item.get_closest_marker(
+                "slow"
+            ):
+                # keep if also explicitly unit
+                if item.get_closest_marker("unit"):
+                    selected.append(item)
+                else:
+                    deselected.append(item)
+            else:
+                # Unmarked tests are treated as unit tests
+                selected.append(item)
+
+        if deselected:
+            config.hook.pytest_deselected(items=deselected)
+        items[:] = selected
 
 
 @pytest.fixture(scope="session")

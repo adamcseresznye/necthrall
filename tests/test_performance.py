@@ -5,6 +5,8 @@ import pytest
 from pathlib import Path
 from scripts.performance_test import main as run_performance_test, PerformanceReport
 
+pytestmark = [pytest.mark.performance, pytest.mark.slow]
+
 BASELINE_FILE = Path(__file__).parent.parent / "performance_baseline.json"
 REGRESSION_THRESHOLD = 1.20  # 20% slowdown
 

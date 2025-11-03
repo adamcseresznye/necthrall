@@ -1,5 +1,8 @@
 import pytest
 from agents.deduplication_agent import DeduplicationAgent
+
+
+pytestmark = [pytest.mark.integration]
 from models.state import State, Paper
 
 

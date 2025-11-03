@@ -2,6 +2,9 @@ import pytest
 from unittest.mock import Mock, patch
 import numpy as np
 from agents.filtering_agent import FilteringAgent
+
+
+pytestmark = [pytest.mark.integration]
 from models.state import State, Paper
 
 

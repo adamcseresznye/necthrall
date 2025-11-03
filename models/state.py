@@ -9,7 +9,6 @@ from pydantic import (
 from typing import List, Dict, Any, Optional, Union, Iterator, Iterable
 import uuid
 from datetime import datetime, timedelta
-import logging
 from enum import Enum
 import re
 import ormsgpack
@@ -345,7 +344,7 @@ class Passage(BaseModel):
         """Normalize section to allowed values, mapping unknowns to 'other' with warning."""
         allowed_sections = {"introduction", "methods", "results", "discussion", "other"}
         if v not in allowed_sections:
-            logging.warning(f"Unknown section '{v}' mapped to 'other'")
+            logger.warning(f"Unknown section '{v}' mapped to 'other'")
             return "other"
         return v
 
@@ -1120,7 +1119,7 @@ class State(BaseModel):
         if self.processing_status == ProcessingStatus.PENDING:
             self.processing_status = ProcessingStatus.IN_PROGRESS
         else:
-            logging.warning(
+            logger.warning(
                 f"Cannot start processing from status: {self.processing_status}"
             )
 
@@ -1132,7 +1131,7 @@ class State(BaseModel):
         ]:
             self.processing_status = ProcessingStatus.COMPLETED
         else:
-            logging.warning(
+            logger.warning(
                 f"Cannot complete processing from status: {self.processing_status}"
             )
 
@@ -1147,9 +1146,9 @@ class State(BaseModel):
                 if self.processing_metadata:
                     self.processing_metadata.processing_errors.append(error_message)
                 else:
-                    logging.error(error_message)
+                    logger.error(error_message)
         else:
-            logging.warning(
+            logger.warning(
                 f"Cannot fail processing from status: {self.processing_status}"
             )
 
@@ -1298,7 +1297,7 @@ class State(BaseModel):
                         )
                         migrated_passages.append(passage)
                     except Exception as e:
-                        logging.warning(f"Failed to migrate passage: {e}, skipping")
+                        logger.warning(f"Failed to migrate passage: {e}, skipping")
                 else:
                     # If already a Passage object, keep as is
                     migrated_passages.append(passage_dict)

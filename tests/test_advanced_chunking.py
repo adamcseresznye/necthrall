@@ -4,6 +4,7 @@ Comprehensive Test Suite for Advanced Document Chunking
 Tests the AdvancedDocumentChunker implementation with SpaCy integration.
 Covers the 4 required test cases from the specification and additional validation.
 
+pytestmark = [pytest.mark.integration, pytest.mark.slow]
 Test Cases:
 1. Section identification works on standard academic paper format
 2. Sentence boundary preservation during chunking

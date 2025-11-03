@@ -1,13 +1,11 @@
 import requests
 import time
-import logging
+from loguru import logger
 from typing import List, Dict, Any
 import json
 
 from utils.openalex_client import OpenAlexClient, Paper as DataclassPaper
 from models.state import State, Paper as PydanticPaper
-
-logger = logging.getLogger(__name__)
 
 
 class SearchAgent:

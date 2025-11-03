@@ -20,7 +20,7 @@ Fallback Note: Originally designed with SpaCy integration, now uses regex-based 
 to avoid Python 3.13 compatibility issues.
 """
 
-import logging
+from loguru import logger
 import re
 import time
 from typing import List, Dict, Any, Tuple, Optional, Union
@@ -28,8 +28,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from models.state import Chunk, PDFContent
 from utils.spacy_error_handler import SpaCyErrorHandler
-
-logger = logging.getLogger(__name__)
 
 
 class SectionPatternConfig:

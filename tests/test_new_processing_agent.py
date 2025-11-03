@@ -7,6 +7,8 @@ Validates the refactored ProcessingAgent interface and component integration.
 from unittest.mock import Mock
 import pytest
 
+pytestmark = [pytest.mark.integration]
+
 
 def create_mock_app(embedder=None, chunker=None):
     """Create a mock FastAPI app with cached models."""

@@ -6,11 +6,10 @@ import os
 import hashlib
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
-import logging
 import json
 import pickle
 
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 @dataclass
@@ -390,14 +389,30 @@ class HybridRetriever:
 
     def _get_faiss_similarities(self, query_embedding: np.ndarray) -> np.ndarray:
         """Get semantic similarities for query embedding against all documents."""
-        # Normalize query embedding for cosine similarity
-        query_norm = query_embedding / np.linalg.norm(query_embedding)
+        # Defensive normalization for cosine similarity.
+        # Coerce to 1-D float32 numpy array, sanitize NaNs/Infs, and avoid divide-by-zero.
+        q = np.asarray(query_embedding, dtype=np.float32).ravel()
+        # Replace NaN/Inf with zeros to avoid propagation
+        q = np.nan_to_num(q, nan=0.0, posinf=0.0, neginf=0.0)
+
+        norm = np.linalg.norm(q)
+        eps = 1e-12
+        if not np.isfinite(norm) or norm <= eps:
+            logger.warning(
+                f"Query embedding has non-finite or near-zero norm ({norm}); "
+                "falling back to safe normalization (eps).",
+                extra={
+                    "event": "embedding_normalization_fallback",
+                    "norm": float(norm),
+                },
+            )
+            query_norm = (q / (norm + eps)).astype(np.float32)
+        else:
+            query_norm = (q / norm).astype(np.float32)
 
         # Search FAISS index (k = all documents for full ranking)
         k = len(self.chunks)
-        similarities, indices = self.faiss_index.search(
-            query_norm.reshape(1, -1).astype(np.float32), k
-        )
+        similarities, indices = self.faiss_index.search(query_norm.reshape(1, -1), k)
 
         return similarities[0]  # FAISS returns shape (1, k), we want (k,)
 

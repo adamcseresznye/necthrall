@@ -32,6 +32,9 @@ from models.state import (
 )
 
 
+pytestmark = [pytest.mark.integration, pytest.mark.slow]
+
+
 @pytest.fixture
 def mock_fastapi_app():
     """Create mock FastAPI app with cached models for testing."""

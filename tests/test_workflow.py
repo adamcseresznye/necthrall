@@ -353,3 +353,6 @@ def test_workflow_stops_after_max_refinements():
 
     # Verify no additional refinement attempted (count stays at 2)
     assert final_state.refinement_count == 2
+
+
+pytestmark = [pytest.mark.integration]

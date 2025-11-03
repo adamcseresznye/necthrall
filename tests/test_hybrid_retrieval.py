@@ -8,6 +8,9 @@ import faiss
 from retrieval.hybrid_retriever import HybridRetriever, RetrievalResult
 
 
+pytestmark = [pytest.mark.integration]
+
+
 @pytest.fixture
 def sample_chunks():
     """Create sample document chunks for testing."""

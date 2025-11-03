@@ -1,5 +1,6 @@
 import asyncio
-import logging
+from loguru import logger
+import sys
 import time
 from typing import List, Optional, Dict, Tuple
 from collections import defaultdict, Counter
@@ -8,7 +9,7 @@ from urllib.parse import urlparse
 import json
 import os
 import uuid
-from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 import aiohttp
 import fitz
@@ -90,46 +91,31 @@ class ProgressTracker:
         )
 
 
-class JsonFormatter(logging.Formatter):
-    """Formats log records as JSON."""
-
-    def format(self, record):
-        log_record = {
-            "timestamp": self.formatTime(record, self.datefmt),
-            "level": record.levelname,
-            "message": record.getMessage(),
-        }
-        if hasattr(record, "correlation_id"):
-            log_record["correlation_id"] = record.correlation_id
-        if hasattr(record, "paper_id"):
-            log_record["paper_id"] = record.paper_id
-        if hasattr(record, "url"):
-            log_record["url"] = record.url
-        if hasattr(record, "error_type"):
-            log_record["error_type"] = record.error_type
-        return json.dumps(log_record)
-
-
 def setup_logging():
     """Configures production-ready logging."""
     log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
-    logger = logging.getLogger(__name__)
-    logger.setLevel(log_level)
+    # Configure Loguru sinks instead of stdlib handlers
+    # Ensure logs directory exists
+    logs_dir = Path("logs")
+    logs_dir.mkdir(parents=True, exist_ok=True)
 
-    if logger.hasHandlers():
-        logger.handlers.clear()
+    # Remove default Loguru handlers
+    logger.remove()
 
-    handler = RotatingFileHandler(
-        "logs/acquisition.log", maxBytes=10_000_000, backupCount=5
+    # File sink with rotation and JSON serialization for structured logs
+    logger.add(
+        logs_dir / "acquisition.log",
+        rotation=10_000_000,
+        retention=5,
+        level=log_level,
+        serialize=True,
+        enqueue=True,
+        catch=True,
     )
-    formatter = JsonFormatter()
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
 
+    # Development: also log to stdout in readable format
     if os.environ.get("ENV") == "development":
-        stream_handler = logging.StreamHandler()
-        stream_handler.setFormatter(formatter)
-        logger.addHandler(stream_handler)
+        logger.add(sys.stderr, level=log_level)
 
     return logger
 
@@ -169,8 +155,7 @@ class AcquisitionAgent:
         papers_to_download = state.papers_metadata
         if not papers_to_download or not any(p.pdf_url for p in papers_to_download):
             logger.warning(
-                "No papers with PDF URLs to download.",
-                extra={"correlation_id": state.request_id},
+                "No papers with PDF URLs to download.", correlation_id=state.request_id
             )
             return state
 

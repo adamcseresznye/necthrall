@@ -8,8 +8,13 @@ import json
 import asyncio
 from loguru import logger
 from dotenv import load_dotenv
+from utils.logging_setup import setup_logging
 
-from utils.llm_client import LLMClient
+# Defer heavy LLM client import/initialization to startup to avoid import-time
+# native dependency issues (transformers / torch). We'll initialize
+# `llm_client` during the FastAPI startup handler if available.
+LLMClient = None
+llm_client = None
 from models.state import State
 from orchestrator.graph import build_workflow
 
@@ -27,6 +32,9 @@ except OSError as e:
 
 # Load environment variables from .env file
 load_dotenv()
+
+# Centralized logging bootstrap
+setup_logging()
 
 # --- FastAPI App Initialization ---
 app = FastAPI(
@@ -92,18 +100,11 @@ class HealthResponse(BaseModel):
 
 
 # --- Global Clients ---
-llm_client = LLMClient()
+# llm_client will be initialized in the startup handler to avoid importing
+# heavy dependencies at module import time.
 # workflow = build_workflow()  # Moved to per-request initialization
 
-# --- Structured Logging Configuration ---
-logger.add(
-    "logs/necthrall_{time}.log",
-    rotation="10 MB",
-    retention="7 days",
-    level="INFO",
-    format="{message}",
-    serialize=True,
-)
+# Structured logging is configured by utils.logging_setup.setup_logging
 
 
 # --- FastAPI Startup Event Handler ---
@@ -158,6 +159,26 @@ async def load_embedding_model():
         app.state.embedding_model = None
         app.state.cross_encoder_model = None
 
+    # Initialize LLM client lazily. Importing utils.llm_client may pull in
+    # transformers/langchain which can import torch; do this inside startup
+    # so tests or environments without torch don't fail at import time.
+    global llm_client, LLMClient
+    if LLMClient is None:
+        try:
+            from utils.llm_client import LLMClient as _LLMClient
+
+            LLMClient = _LLMClient
+        except Exception as e:
+            logger.warning(f"LLM client not available at startup: {e}")
+            LLMClient = None
+
+    if LLMClient is not None:
+        try:
+            llm_client = LLMClient()
+        except Exception as e:
+            logger.warning(f"Failed to initialize LLM client at startup: {e}")
+            llm_client = None
+
 
 @app.on_event("shutdown")
 async def cleanup_resources():
@@ -204,25 +225,32 @@ async def process_query(request_data: QueryRequest, request: Request):
             max_papers=request_data.max_papers,
         )
 
-        # 2. Test LLM Connectivity
-        logger.info(
-            json.dumps(
-                {
-                    "event": "llm_call",
-                    "request_id": request_id,
-                    "prompt": f"Provide a one-sentence overview of this query: {request_data.query}",
-                }
+        # 2. Test LLM Connectivity (if available)
+        if llm_client is not None:
+            logger.info(
+                json.dumps(
+                    {
+                        "event": "llm_call",
+                        "request_id": request_id,
+                        "prompt": f"Provide a one-sentence overview of this query: {request_data.query}",
+                    }
+                )
             )
-        )
-        llm_test_response = llm_client.generate(
-            messages=[
-                {
-                    "role": "user",
-                    "content": f"Provide a one-sentence overview of this query: {request_data.query}",
-                }
-            ],
-            max_tokens=100,
-        )
+            try:
+                llm_test_response = llm_client.generate(
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": f"Provide a one-sentence overview of this query: {request_data.query}",
+                        }
+                    ],
+                    max_tokens=100,
+                )
+            except Exception as e:
+                logger.warning(f"LLM call failed, continuing without LLM: {e}")
+                llm_test_response = {"content": "LLM unavailable", "model_used": None}
+        else:
+            llm_test_response = {"content": "LLM unavailable", "model_used": None}
 
         # 3. Invoke LangGraph Workflow
         logger.info(
@@ -286,17 +314,24 @@ async def health_check():
     groq_status = "ok"
 
     try:
-        await asyncio.to_thread(
-            llm_client.primary_llm.invoke, [{"role": "user", "content": "Health check"}]
-        )
+        if llm_client is not None:
+            await asyncio.to_thread(
+                llm_client.primary_llm.invoke,
+                [{"role": "user", "content": "Health check"}],
+            )
+        else:
+            gemini_status = "unavailable"
     except Exception:
         gemini_status = "error"
 
     try:
-        await asyncio.to_thread(
-            llm_client.fallback_llm.invoke,
-            [{"role": "user", "content": "Health check"}],
-        )
+        if llm_client is not None:
+            await asyncio.to_thread(
+                llm_client.fallback_llm.invoke,
+                [{"role": "user", "content": "Health check"}],
+            )
+        else:
+            groq_status = "unavailable"
     except Exception:
         groq_status = "error"
 

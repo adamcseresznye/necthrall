@@ -4,6 +4,8 @@ from models.state import State, Paper, PDFContent
 from agents.acquisition import AcquisitionAgent, PDFParsingError
 import aiohttp
 
+pytestmark = [pytest.mark.integration]
+
 
 @pytest.mark.asyncio
 async def test_integrated_pipeline_and_extraction_failures():

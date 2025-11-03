@@ -1,12 +1,10 @@
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import PromptTemplate
 from langchain_core.messages import HumanMessage
-import logging
+from loguru import logger
 from typing import Optional
 from models.state import State
 import os
-
-logger = logging.getLogger(__name__)
 
 
 class FallbackRefinementAgent:

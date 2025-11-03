@@ -16,7 +16,6 @@ Ensures deterministic outputs and structured logging with per-stage metrics.
 
 import asyncio
 import json
-import logging
 import os
 import psutil
 import random
@@ -38,9 +37,8 @@ from utils.embedding_manager import EmbeddingManager
 from retrieval.hybrid_retriever import HybridRetriever
 from retrieval.reranker import CrossEncoderReranker
 
-# Configure structured logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Use Loguru for structured logging
+from loguru import logger
 
 
 def create_mock_app() -> FastAPI:

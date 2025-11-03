@@ -5,6 +5,8 @@ import json
 from unittest.mock import patch, Mock
 from utils.openalex_client import OpenAlexClient, Paper, _reconstruct_abstract
 
+pytestmark = [pytest.mark.integration]
+
 
 @pytest.fixture
 def client():

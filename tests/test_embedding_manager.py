@@ -10,6 +10,9 @@ from sentence_transformers import SentenceTransformer
 from utils.embedding_manager import EmbeddingManager
 
 
+pytestmark = [pytest.mark.integration]
+
+
 @pytest.fixture
 def mock_sentence_transformer():
     """Create a mock SentenceTransformer model for testing."""

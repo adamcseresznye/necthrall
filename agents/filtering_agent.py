@@ -1,13 +1,12 @@
 from rank_bm25 import BM25Okapi
 from sentence_transformers import util
 import numpy as np
-import logging
 import time
 from typing import List, Tuple
 from fastapi import Request
 from models.state import State, Paper
 
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 class FilteringAgent:

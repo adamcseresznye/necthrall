@@ -1,9 +1,7 @@
-import logging
 import re
 from typing import List, Set, Dict, Any
 from models.state import State, Paper
-
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 class DeduplicationAgent:
