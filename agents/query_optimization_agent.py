@@ -39,9 +39,10 @@ class QueryOptimizationAgent:
             llm: LangChain ChatGoogleGenerativeAI instance. If None, creates default.
         """
         self.llm = llm or ChatGoogleGenerativeAI(
-            model=os.getenv("LLM_MODEL_PRIMARY"),
+            model=os.getenv("LLM_MODEL_PRIMARY", "gemini-1.5-flash"),
             temperature=0.5,  # Slight creativity for synonym generation
             max_tokens=150,  # Optimized queries should be concise
+            google_api_key=os.getenv("GOOGLE_API_KEY"),
         )
 
         self.prompt = PromptTemplate(

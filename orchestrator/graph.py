@@ -7,6 +7,7 @@ from agents.processing_agent import ProcessingAgent
 from agents.query_optimization_agent import QueryOptimizationAgent
 from agents.deduplication_agent import DeduplicationAgent
 from agents.fallback_refinement_agent import FallbackRefinementAgent
+from agents.analysis import AnalysisAgent
 from utils.logging_decorator import log_state_transition
 from typing import Dict, Any
 from loguru import logger
@@ -86,6 +87,14 @@ def build_workflow(request, mock_agents=None) -> StateGraph:
     acquisition_agent = (
         mock_agents.get("acquisition_agent") if mock_agents else AcquisitionAgent()
     )
+    processing_agent = (
+        mock_agents.get("processing_agent")
+        if mock_agents
+        else ProcessingAgent(request.app)
+    )
+    analysis_agent = (
+        mock_agents.get("analysis_agent") if mock_agents else AnalysisAgent()
+    )
 
     # Create StateGraph
     workflow = StateGraph(State)
@@ -97,7 +106,9 @@ def build_workflow(request, mock_agents=None) -> StateGraph:
     workflow.add_node("filter", filtering_agent.filter_candidates)
     workflow.add_node("fallback_refinement", fallback_refiner.refine)
     workflow.add_node("acquisition", acquisition_agent)
-    # ... add other nodes (processing, analysis, synthesis, verification)
+    workflow.add_node("processing", processing_agent)
+    workflow.add_node("analysis", analysis_agent.analyze)
+    # ... add other nodes (synthesis, verification)
 
     # Define edges (linear flow with conditional loops)
     workflow.set_entry_point("optimize_query")
@@ -123,6 +134,8 @@ def build_workflow(request, mock_agents=None) -> StateGraph:
     # Continue main flow
     workflow.add_edge("deduplicate", "filter")
     workflow.add_edge("filter", "acquisition")
+    workflow.add_edge("acquisition", "processing")
+    workflow.add_edge("processing", "analysis")
     # ... add edges for remaining nodes
 
     # Compile workflow
