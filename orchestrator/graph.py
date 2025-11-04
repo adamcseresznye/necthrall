@@ -14,6 +14,12 @@ from loguru import logger
 import json
 import asyncio
 
+try:
+    from src.necthrall_lite.services.synthesis_service import SynthesisAgent
+except ImportError:
+    # Fallback if import fails
+    SynthesisAgent = None
+
 
 def should_refine_query(state: State) -> str:
     """
@@ -46,6 +52,260 @@ def should_refine_query(state: State) -> str:
         )
 
     return "continue"
+
+
+def synthesis_node(state: State) -> State:
+    """
+    Synthesis node: Generate citation-grounded answers from retrieved passages and credibility scores.
+
+    Updates state with synthesized_answer, citations, and consensus_estimate.
+    Handles synthesis failures gracefully by logging errors and setting error messages in state.
+
+    Args:
+        state: Current State with query, relevant_passages, credibility_scores, contradictions
+
+    Returns:
+        Updated State with synthesis results
+    """
+    logger.info("Starting synthesis node execution")
+
+    try:
+        if SynthesisAgent is None:
+            raise ImportError("SynthesisAgent not available")
+
+        # Initialize agent
+        agent = SynthesisAgent()
+
+        # Prepare input data
+        # Note: ProcessingAgent populates top_passages (legacy field), not relevant_passages
+        passages = []
+        for passage in state.top_passages:
+            passages.append(
+                {
+                    "content": passage.content,
+                    "paper_id": passage.paper_id,
+                    "section": passage.section,
+                }
+            )
+
+        credibility_scores = []
+        for score in state.credibility_scores:
+            credibility_scores.append(
+                {
+                    "paper_id": score.paper_id,
+                    "score": score.score,
+                    "tier": score.tier,
+                    "rationale": score.rationale,
+                }
+            )
+
+        contradictions = []
+        for contra in state.contradictions:
+            contradictions.append(
+                {
+                    "topic": contra.topic,
+                    "claim_1": {
+                        "paper_id": contra.claim_1.paper_id,
+                        "text": contra.claim_1.text,
+                    },
+                    "claim_2": {
+                        "paper_id": contra.claim_2.paper_id,
+                        "text": contra.claim_2.text,
+                    },
+                    "severity": contra.severity,
+                }
+            )
+
+        # Call synthesis with retry logic: up to max_attempts attempts.
+        max_attempts = 2
+        attempt = 0
+        result = None
+        last_validation = None
+
+        while attempt < max_attempts:
+            attempt += 1
+            logger.info(f"Synthesis attempt {attempt}/{max_attempts}")
+
+            try:
+                result = asyncio.run(
+                    agent.synthesize(
+                        query=state.original_query,
+                        passages=passages,
+                        credibility_scores=credibility_scores,
+                        contradictions=contradictions if contradictions else None,
+                    )
+                )
+            except Exception as e:
+                logger.warning(
+                    json.dumps(
+                        {
+                            "event": "synthesis_call_failure",
+                            "attempt": attempt,
+                            "error": str(e),
+                        }
+                    )
+                )
+                # If we've exhausted attempts, raise to outer handler
+                if attempt >= max_attempts:
+                    raise
+                else:
+                    # continue to next attempt
+                    continue
+
+            # Validate citations for hallucinations or invalid indices
+            try:
+                # Prefer the real validation implementation from the service module
+                try:
+                    from src.necthrall_lite.services.synthesis_service import (
+                        SynthesisAgent as _RealSynthesisAgent,
+                    )
+
+                    validator = _RealSynthesisAgent.validate_citations
+                except Exception:
+                    # Fallback to whatever is available on the (possibly patched) SynthesisAgent
+                    validator = getattr(SynthesisAgent, "validate_citations", None)
+
+                if validator is None:
+                    raise RuntimeError("No citation validator available")
+
+                last_validation = validator(result.answer, passages)
+            except Exception as e:
+                # Validation should not crash pipeline; treat as failed validation
+                logger.warning(
+                    json.dumps({"event": "citation_validation_error", "error": str(e)})
+                )
+                last_validation = None
+
+            # If validation passed, accept result
+            if last_validation and last_validation.validation_passed:
+                logger.info(
+                    json.dumps(
+                        {
+                            "event": "synthesis_validated",
+                            "attempt": attempt,
+                            "valid_citations": last_validation.valid_citations,
+                            "invalid_citations": last_validation.invalid_citations,
+                        }
+                    )
+                )
+                break
+
+            # Otherwise, prepare targeted feedback and retry if attempts remain
+            if attempt < max_attempts:
+                invalids = last_validation.invalid_citations if last_validation else []
+                feedback_text = (
+                    "The previous synthesis included invalid or hallucinated citations: "
+                    f"{invalids}.\nPlease regenerate the answer using ONLY the provided passages and ensure all inline citation numbers [N] refer to existing passages (1..{len(passages)})."
+                )
+
+                # Attach feedback via the contradictions field so the LLM sees the instruction
+                feedback_contra = [
+                    {
+                        "topic": "Citation validation feedback",
+                        "claim_1": {"paper_id": "meta_feedback", "text": feedback_text},
+                        "claim_2": {
+                            "paper_id": "meta_feedback",
+                            "text": "Please correct citations and avoid hallucinations.",
+                        },
+                        "severity": "minor",
+                    }
+                ]
+
+                logger.info(
+                    json.dumps(
+                        {
+                            "event": "synthesis_retry_scheduled",
+                            "attempt": attempt + 1,
+                            "feedback": feedback_text,
+                        }
+                    )
+                )
+
+                # Set contradictions for the next attempt
+                contradictions = feedback_contra
+                continue
+
+        # Update state with results
+        new_state = state.model_copy()
+        new_state.synthesized_answer = result.answer
+        # Debug: log raw citations returned by agent for troubleshooting
+        try:
+            logger.info(
+                f"synthesis result type: {type(result)}, citations attr type: {type(result.citations)}"
+            )
+            logger.info(json.dumps({"raw_citations": str(result.citations)}))
+        except Exception:
+            logger.info("raw_citations: <unserializable>")
+
+        # Convert citations to plain dicts robustly: support pydantic models or plain dicts
+        converted_citations = []
+        for cit in result.citations or []:
+            try:
+                # pydantic model
+                converted_citations.append(cit.model_dump())
+            except Exception:
+                try:
+                    # plain dict-like
+                    converted_citations.append(dict(cit))
+                except Exception:
+                    # Fallback to string representation
+                    converted_citations.append({"text": str(cit)})
+
+        new_state.citations = converted_citations
+        # Fallback: if no structured citations were returned, try extracting inline [N] citations from the answer
+        if not new_state.citations and isinstance(result.answer, str):
+            import re
+
+            matches = re.findall(r"\[(\d+)\]", result.answer)
+            unique = []
+            for m in matches:
+                try:
+                    idx = int(m)
+                except Exception:
+                    continue
+                if idx < 1 or idx > len(passages):
+                    continue
+                if idx in unique:
+                    continue
+                unique.append(idx)
+                passage = passages[idx - 1]
+                new_state.citations.append(
+                    {
+                        "index": idx,
+                        "paper_id": passage["paper_id"],
+                        "text": passage["content"][:200]
+                        + ("..." if len(passage["content"]) > 200 else ""),
+                        "credibility_score": None,
+                    }
+                )
+        new_state.consensus_estimate = result.consensus_estimate
+
+        logger.info(
+            "Synthesis node completed successfully",
+            extra={
+                "answer_length": len(result.answer),
+                "citation_count": len(result.citations),
+                "consensus": result.consensus_estimate,
+            },
+        )
+
+        return new_state
+
+    except Exception as e:
+        logger.error(f"Synthesis node failed: {str(e)}")
+
+        # Update state with error information
+        new_state = state.model_copy()
+        new_state.synthesized_answer = f"Error during synthesis: {str(e)}"
+        new_state.citations = []
+        new_state.consensus_estimate = None
+
+        # Add to analysis errors for consistency
+        if new_state.analysis_errors is None:
+            new_state.analysis_errors = []
+        new_state.analysis_errors.append(f"Synthesis failed: {str(e)}")
+
+        return new_state
 
 
 def build_workflow(request, mock_agents=None) -> StateGraph:
@@ -108,7 +368,8 @@ def build_workflow(request, mock_agents=None) -> StateGraph:
     workflow.add_node("acquisition", acquisition_agent)
     workflow.add_node("processing", processing_agent)
     workflow.add_node("analysis", analysis_agent.analyze)
-    # ... add other nodes (synthesis, verification)
+    workflow.add_node("synthesis", synthesis_node)
+    # ... add other nodes (verification)
 
     # Define edges (linear flow with conditional loops)
     workflow.set_entry_point("optimize_query")
@@ -136,6 +397,7 @@ def build_workflow(request, mock_agents=None) -> StateGraph:
     workflow.add_edge("filter", "acquisition")
     workflow.add_edge("acquisition", "processing")
     workflow.add_edge("processing", "analysis")
+    workflow.add_edge("analysis", "synthesis")
     # ... add edges for remaining nodes
 
     # Compile workflow

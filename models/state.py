@@ -19,6 +19,24 @@ import json
 from typing import Callable, Any
 
 
+class Citation(BaseModel):
+    """Citation metadata for synthesized answers.
+
+    Fields:
+        index: int - The citation number [N] in the answer
+        paper_id: str - ID of the cited paper
+        text: str - The specific text excerpt being cited
+        credibility_score: Optional[int] - Credibility score of the paper (0-100)
+    """
+
+    index: int = Field(..., ge=1, description="Citation number in the answer")
+    paper_id: str = Field(..., description="ID of the cited paper")
+    text: str = Field(..., max_length=500, description="Cited text excerpt")
+    credibility_score: Optional[int] = Field(
+        None, ge=0, le=100, description="Paper credibility score"
+    )
+
+
 class LazyList:
     """
     A lazy-loading list that only loads items when accessed.
@@ -810,7 +828,14 @@ class State(BaseModel):
         None, description="Placeholder for Week 3 analysis results"
     )
     synthesized_answer: Optional[str] = Field(
-        None, description="Placeholder for synthesized answer from analysis phase"
+        None, description="Synthesized answer with inline citations from analysis phase"
+    )
+    citations: List[Citation] = Field(
+        default_factory=list, description="Citation metadata for the synthesized answer"
+    )
+    consensus_estimate: Optional[str] = Field(
+        None,
+        description="Agreement level among sources (High/Moderate/Low consensus or Conflicting evidence)",
     )
 
     # Analysis results

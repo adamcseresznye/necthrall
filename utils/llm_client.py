@@ -5,6 +5,10 @@ from typing import List, Dict, Optional
 import os
 from dotenv import load_dotenv
 
+# CRITICAL: Import torch BEFORE langchain providers to avoid DLL initialization errors on Windows
+# See: https://github.com/pytorch/pytorch/issues/91966
+import torch
+
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage

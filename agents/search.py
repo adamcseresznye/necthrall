@@ -29,6 +29,9 @@ class SearchAgent:
         """
         Execute OpenAlex search with type filtering.
 
+        Includes fallback: if optimized query returns <10 papers, retry with original query.
+        This prevents over-optimization from narrowing results too much.
+
         Args:
             state: LangGraph State with optimized_query field
 
@@ -45,6 +48,29 @@ class SearchAgent:
 
         # Combine results
         all_papers = review_papers + article_papers
+
+        # Fallback: if optimized query returned too few papers, retry with original query
+        if (
+            len(all_papers) < 10
+            and state.optimized_query != state.original_query
+            and state.original_query
+        ):
+            logger.warning(
+                f"SearchAgent: Optimized query returned only {len(all_papers)} papers. "
+                f"Retrying with original query: '{state.original_query}'"
+            )
+            time.sleep(self.RATE_LIMIT_DELAY)
+            review_papers = self._query_openalex(
+                state.original_query, paper_type="review", limit=30
+            )
+            time.sleep(self.RATE_LIMIT_DELAY)
+            article_papers = self._query_openalex(
+                state.original_query, paper_type="article", limit=70
+            )
+            all_papers = review_papers + article_papers
+            query = (
+                state.original_query
+            )  # Update query for quality assessment and logging
 
         # Assess search quality
         search_quality = self._assess_quality(all_papers, query)
@@ -114,9 +140,13 @@ class SearchAgent:
         """
         Assess search quality to determine if refinement is needed.
 
-        Quality Check (replaces separate node):
-        - PASS if: len(papers) >= 10 AND avg_relevance >= 0.4
-        - FAIL if: len(papers) < 10 OR avg_relevance < 0.4
+        Quality Check:
+        - For OR queries (broad search): PASS if len(papers) >= 30
+        - For other queries: PASS if len(papers) >= 10 AND avg_relevance >= 0.4
+
+        Rationale: OR queries cast a wide net with many terms, so keyword overlap
+        scores are naturally low even for relevant papers. For these broad searches,
+        rely solely on paper count.
 
         Args:
             papers: List of retrieved papers
@@ -126,6 +156,7 @@ class SearchAgent:
             Dict with keys: passed (bool), reason (str), paper_count (int), avg_relevance (float)
         """
         paper_count = len(papers)
+        is_or_query = " OR " in query.upper()
 
         # Simple relevance heuristic: keyword overlap between query and titles
         query_terms = set(query.lower().split())
@@ -141,13 +172,21 @@ class SearchAgent:
             sum(relevance_scores) / len(relevance_scores) if relevance_scores else 0
         )
 
-        # Quality assessment
-        passed = paper_count >= 10 and avg_relevance >= 0.4
-        reason = (
-            f"Found {paper_count} papers with avg_relevance {avg_relevance:.2f}"
-            if passed
-            else f"Insufficient results: {paper_count} papers, avg_relevance {avg_relevance:.2f}"
-        )
+        # Quality assessment: OR queries skip relevance check
+        if is_or_query:
+            passed = paper_count >= 30
+            reason = (
+                f"Found {paper_count} papers (OR query, relevance check skipped)"
+                if passed
+                else f"Insufficient results for OR query: {paper_count} papers (need 30+)"
+            )
+        else:
+            passed = paper_count >= 10 and avg_relevance >= 0.4
+            reason = (
+                f"Found {paper_count} papers with avg_relevance {avg_relevance:.2f}"
+                if passed
+                else f"Insufficient results: {paper_count} papers, avg_relevance {avg_relevance:.2f}"
+            )
 
         return {
             "passed": passed,

@@ -6,6 +6,9 @@ import re
 from typing import Optional
 from models.state import State
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 class QueryOptimizationAgent:
@@ -39,7 +42,7 @@ class QueryOptimizationAgent:
             llm: LangChain ChatGoogleGenerativeAI instance. If None, creates default.
         """
         self.llm = llm or ChatGoogleGenerativeAI(
-            model=os.getenv("LLM_MODEL_PRIMARY", "gemini-1.5-flash"),
+            model=os.getenv("LLM_MODEL_PRIMARY"),
             temperature=0.5,  # Slight creativity for synonym generation
             max_tokens=150,  # Optimized queries should be concise
             google_api_key=os.getenv("GOOGLE_API_KEY"),
@@ -47,36 +50,37 @@ class QueryOptimizationAgent:
 
         self.prompt = PromptTemplate(
             input_variables=["query"],
-            template="""You are a scientific search optimization expert. Your task is to rewrite the user's query into a precise, scientifically-worded query optimized for academic paper databases like OpenAlex.
+            template="""You are an OpenAlex search optimization expert. Your task is to rewrite the user's query into a BROAD Boolean search query optimized for the OpenAlex academic paper database.
 
 Original Query: {query}
 
+CRITICAL: Generate queries that cast a WIDE net to retrieve 50-100+ papers. Use OR to connect related concepts, NOT AND which narrows results too much.
+
 Instructions:
-1. Replace colloquial terms with formal scientific equivalents:
-   - "heart attack" → "myocardial infarction"
-   - "fasting" → "intermittent fasting protocols"
-   - "memory loss" → "cognitive decline" or "neurodegenerative disorders"
-   - "gut health" → "gut microbiome composition" or "intestinal dysbiosis"
-   - "cancer treatment" → "oncological therapeutic interventions"
+1. Identify the main topic and 3-5 related scientific terms or synonyms
+2. Connect ALL terms with OR to maximize results
+3. Replace colloquial terms with scientific equivalents
 
-2. Add specificity if query is too vague:
-   - "effects of diet" → "metabolic effects of ketogenic diet"
-   - "CRISPR" → "CRISPR-Cas9 off-target effects and delivery mechanisms"
-   - "vitamin benefits" → "physiological effects of vitamin D supplementation"
+Structure: MAIN_TERM OR SYNONYM1 OR SYNONYM2 OR RELATED_ASPECT1 OR RELATED_ASPECT2
 
-3. Include relevant biological pathways, mechanisms, or methodologies when appropriate:
-   - "diabetes treatment" → "insulin signaling pathway modulation in type 2 diabetes"
-   - "anti-aging" → "cellular senescence and longevity pathways"
+Examples:
+- "Are persistent organic pollutants safe?" → "persistent organic pollutants OR POPs OR environmental toxicity OR ecotoxicity OR bioaccumulation OR environmental impact"
+- "CRISPR safety" → "CRISPR OR CRISPR-Cas9 OR gene editing OR off-target effects OR genetic modification OR genome editing"
+- "air pollution health" → "air pollution OR particulate matter OR PM2.5 OR respiratory disease OR cardiovascular effects OR health impacts"
+- "fasting benefits" → "intermittent fasting OR caloric restriction OR time-restricted eating OR metabolic health OR longevity OR health benefits"
+- "heart attack risks" → "myocardial infarction OR heart attack OR coronary disease OR cardiovascular risk OR cardiac events OR acute coronary syndrome"
 
-4. **Preserve user intent** - Don't change the fundamental question or make it overly narrow
-   - If user asks about "benefits", keep the focus on positive outcomes
-   - If user asks about "risks", focus on adverse effects
+Key principles:
+- Use OR to broaden the search (retrieves papers matching ANY term)
+- Include 5-7 terms total to cast a wide net
+- Mix formal scientific terms with common alternatives
+- Include related concepts that researchers might study
+- Avoid overly narrow technical jargon
+- **Do NOT use AND** - it dramatically reduces results
 
-5. Keep the query between 8-15 words (40-100 characters ideal)
+Output ONLY the Boolean query. **No quote marks. No explanations.**
 
-6. Output ONLY the optimized query. No explanations, no quotes, no additional text.
-
-Optimized Query:""",
+OpenAlex Boolean Query:""",
         )
 
     def optimize(self, state: State) -> State:

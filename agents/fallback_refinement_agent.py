@@ -5,6 +5,9 @@ from loguru import logger
 from typing import Optional
 from models.state import State
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 class FallbackRefinementAgent:
@@ -29,7 +32,7 @@ class FallbackRefinementAgent:
             # Default behavior: try to create LLM, fallback to None if unavailable
             try:
                 self.llm = ChatGoogleGenerativeAI(
-                    model=os.getenv("LLM_MODEL_PRIMARY", "gemini-2.0-flash-exp"),
+                    model=os.getenv("LLM_MODEL_PRIMARY"),
                     temperature=0.6,  # Slightly higher than optimization for more creativity
                     max_tokens=150,
                 )
