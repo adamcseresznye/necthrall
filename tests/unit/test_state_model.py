@@ -4,8 +4,6 @@ pytestmark = [pytest.mark.unit]
 from pydantic import ValidationError
 from models.state import State, Paper, Passage, Score
 
-pytest.skip("moved to tests/unit/test_state_model.py", allow_module_level=True)
-
 
 def test_state_creation():
     """Tests basic State object creation with new optimized fields."""
@@ -808,7 +806,7 @@ def test_comprehensive_processing_integration():
     assert top_passage.reranking_score == 0.90
     assert top_passage.scores.final_rank == 1
 
-    # Test serialization roundtrip (brief test)
+    # Serialization roundtrip (brief test)
     serialized = state.model_dump()
     reconstructed = State.model_validate(serialized)
 

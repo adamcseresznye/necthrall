@@ -4,7 +4,6 @@ Comprehensive Test Suite for Advanced Document Chunking
 Tests the AdvancedDocumentChunker implementation with SpaCy integration.
 Covers the 4 required test cases from the specification and additional validation.
 
-pytestmark = [pytest.mark.integration, pytest.mark.slow]
 Test Cases:
 1. Section identification works on standard academic paper format
 2. Sentence boundary preservation during chunking
@@ -22,6 +21,8 @@ import pytest
 import time
 from unittest.mock import Mock, patch
 from typing import List, Dict, Any
+
+pytestmark = [pytest.mark.performance]
 
 from rag.chunking import AdvancedDocumentChunker, SectionPatternConfig
 from models.state import Chunk, PDFContent
@@ -433,7 +434,9 @@ class TestPerformanceValidation:
         # Scale performance for 25 documents
         scaled_time = processing_time * (25 / 5)  # 5x scaling
 
-        assert scaled_time < 1.0, ".3f"
+        assert (
+            scaled_time < 1.0
+        ), f"Performance requirement not met: {scaled_time:.3f}s for 25 documents (should be < 1.0s)"
 
         # Verify processing was successful
         assert len(chunks) > 0, "Should generate chunks"

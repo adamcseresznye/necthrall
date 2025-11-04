@@ -388,6 +388,63 @@ class Score(BaseModel):
     confidence: Optional[float] = None
 
 
+class CredibilityScore(BaseModel):
+    """Credibility score for a paper.
+
+    Fields:
+        paper_id: str
+        score: int (0-100)
+        tier: str ("high", "medium", "low")
+        rationale: str (concise explanation, max 100 chars, <=15 words)
+
+    Example:
+        CredibilityScore(paper_id="p1", score=85, tier="high", rationale="high citations (120), recent (2023), top-tier journal")
+    """
+
+    paper_id: str
+    score: int = Field(..., ge=0, le=100)
+    tier: str = Field(..., pattern="^(high|medium|low)$")
+    rationale: str = Field(..., max_length=100)
+
+    @field_validator("rationale")
+    @classmethod
+    def validate_rationale_word_count(cls, v: str) -> str:
+        """Ensure rationale is short (<=15 words)."""
+        words = [w for w in v.strip().split() if w]
+        if len(words) > 15:
+            # Truncate to 15 words preserving basic meaning
+            return " ".join(words[:15])
+        return v
+
+
+class ContradictionClaim(BaseModel):
+    """A claim in a contradiction detection result.
+
+    Fields:
+        paper_id: str - ID of the paper containing the claim
+        text: str - The claim text (max 150 characters)
+    """
+
+    paper_id: str
+    text: str = Field(..., max_length=150)
+
+
+class DetectedContradiction(BaseModel):
+    """A detected contradiction between two claims.
+
+    Fields:
+        topic: str - Brief description of the disagreement area (max 50 chars)
+        claim_1: ContradictionClaim - First conflicting claim
+        claim_2: ContradictionClaim - Second conflicting claim
+        severity: str - "major" for direct opposition, "minor" for nuanced disagreement
+    """
+
+    topic: str = Field(..., max_length=50)
+    claim_1: ContradictionClaim
+    claim_2: ContradictionClaim
+    severity: str = Field(..., pattern="^(major|minor)$")
+
+
 class DownloadResult(BaseModel):
     paper_id: str
     success: bool
@@ -754,6 +811,34 @@ class State(BaseModel):
     )
     synthesized_answer: Optional[str] = Field(
         None, description="Placeholder for synthesized answer from analysis phase"
+    )
+
+    # Analysis results
+    credibility_scores: List[CredibilityScore] = Field(
+        default_factory=list, description="Credibility scores for filtered papers"
+    )
+    contradictions: List[DetectedContradiction] = Field(
+        default_factory=list, description="Detected contradictions between passages"
+    )
+
+    # Analysis error handling and recovery
+    analysis_errors: List[str] = Field(
+        default_factory=list, description="Errors encountered during analysis phase"
+    )
+    recovery_actions: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Recovery actions taken during analysis failures",
+    )
+
+    # Analysis performance data
+    performance_data: Optional[Dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Performance metrics and monitoring data from analysis phase",
+    )
+
+    # Execution timing
+    execution_times: Dict[str, float] = Field(
+        default_factory=dict, description="Execution times for each pipeline stage"
     )
 
     # AcquisitionAgent output

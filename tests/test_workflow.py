@@ -4,6 +4,8 @@ from models.state import State
 from orchestrator.graph import build_workflow, should_refine_query
 from agents.fallback_refinement_agent import FallbackRefinementAgent
 
+pytestmark = [pytest.mark.unit]
+
 
 def test_should_refine_query_triggers_on_failure():
     """Test routing function triggers refinement when search quality fails"""
@@ -171,6 +173,8 @@ def test_workflow_executes_without_refinement():
     mock_filtering_agent = Mock()
     mock_fallback_refiner = Mock()
     mock_acquisition_agent = Mock()
+    mock_processing_agent = Mock()
+    mock_analysis_agent = Mock()
 
     mock_agents = {
         "query_optimizer": mock_query_optimizer,
@@ -179,6 +183,8 @@ def test_workflow_executes_without_refinement():
         "filtering_agent": mock_filtering_agent,
         "fallback_refiner": mock_fallback_refiner,
         "acquisition_agent": mock_acquisition_agent,
+        "processing_agent": mock_processing_agent,
+        "analysis_agent": mock_analysis_agent,
     }
 
     # Build workflow with mock agents
@@ -203,6 +209,8 @@ def test_workflow_executes_without_refinement():
     mock_dedup_agent.deduplicate.return_value = initial_state
     mock_filtering_agent.filter_candidates.return_value = initial_state
     mock_acquisition_agent.return_value = initial_state
+    mock_processing_agent.return_value = initial_state
+    mock_analysis_agent.analyze.return_value = initial_state
 
     # Execute workflow
     final_result = workflow.invoke(initial_state)
@@ -225,6 +233,8 @@ def test_workflow_triggers_refinement_loop():
     mock_filtering_agent = Mock()
     mock_fallback_refiner = Mock()
     mock_acquisition_agent = Mock()
+    mock_processing_agent = Mock()
+    mock_analysis_agent = Mock()
 
     mock_agents = {
         "query_optimizer": mock_query_optimizer,
@@ -233,6 +243,8 @@ def test_workflow_triggers_refinement_loop():
         "filtering_agent": mock_filtering_agent,
         "fallback_refiner": mock_fallback_refiner,
         "acquisition_agent": mock_acquisition_agent,
+        "processing_agent": mock_processing_agent,
+        "analysis_agent": mock_analysis_agent,
     }
 
     workflow = build_workflow(request, mock_agents)
@@ -289,6 +301,12 @@ def test_workflow_triggers_refinement_loop():
     mock_acquisition_agent.return_value = State(
         **{**initial_state.model_dump(), "refinement_count": 1}
     )
+    mock_processing_agent.return_value = State(
+        **{**initial_state.model_dump(), "refinement_count": 1}
+    )
+    mock_analysis_agent.analyze.return_value = State(
+        **{**initial_state.model_dump(), "refinement_count": 1}
+    )
 
     # Execute workflow
     final_result = workflow.invoke(initial_state)
@@ -311,6 +329,8 @@ def test_workflow_stops_after_max_refinements():
     mock_filtering_agent = Mock()
     mock_fallback_refiner = Mock()
     mock_acquisition_agent = Mock()
+    mock_processing_agent = Mock()
+    mock_analysis_agent = Mock()
 
     mock_agents = {
         "query_optimizer": mock_query_optimizer,
@@ -319,6 +339,8 @@ def test_workflow_stops_after_max_refinements():
         "filtering_agent": mock_filtering_agent,
         "fallback_refiner": mock_fallback_refiner,
         "acquisition_agent": mock_acquisition_agent,
+        "processing_agent": mock_processing_agent,
+        "analysis_agent": mock_analysis_agent,
     }
 
     workflow = build_workflow(request, mock_agents)
@@ -344,6 +366,12 @@ def test_workflow_stops_after_max_refinements():
         **{**initial_state.model_dump(), "refinement_count": 2}
     )
     mock_acquisition_agent.return_value = State(
+        **{**initial_state.model_dump(), "refinement_count": 2}
+    )
+    mock_processing_agent.return_value = State(
+        **{**initial_state.model_dump(), "refinement_count": 2}
+    )
+    mock_analysis_agent.analyze.return_value = State(
         **{**initial_state.model_dump(), "refinement_count": 2}
     )
 

@@ -1,3 +1,15 @@
+"""
+conftest to configure pytest and expose fixtures from tests/fixtures.
+"""
+
+# Use pytest_plugins so pytest will import the fixtures module automatically.
+# This avoids brittle manual import attempts and ensures fixtures in
+# tests/fixtures/analysis_fixtures.py are registered.
+# Expose both the legacy fixtures module (tests/fixtures.py) and the
+# new package-based fixtures under tests/fixtures/ so existing tests that
+# import fixtures from the legacy file continue to work.
+pytest_plugins = ["tests.fixtures.analysis_fixtures"]
+
 # tests/conftest.py
 import sys
 import os
@@ -6,14 +18,8 @@ import time
 import pytest
 from typing import Dict, Any, List
 
-# Import fixtures from fixtures.py to make them available
-from .fixtures import (
-    mock_fastapi_app,
-    realistic_scientific_papers,
-    realistic_pdf_contents,
-    integration_test_queries,
-    processing_integration_state,
-)
+
+# Other fixtures are provided by modules under tests/fixtures/ (imported via pytest_plugins)
 
 from utils.logging_setup import setup_logging
 
@@ -63,6 +69,9 @@ def pytest_configure(config):
         "markers",
         "unit: marks fast unit tests or can be used with '-m unit' to select fast tests",
     )
+
+
+# Fixtures are defined in tests/fixtures/analysis_fixtures.py and imported above
 
 
 def pytest_collection_modifyitems(config, items):
