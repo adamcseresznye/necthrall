@@ -1,0 +1,1 @@
+# Necthrall Lite API schemas

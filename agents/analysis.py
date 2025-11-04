@@ -34,6 +34,10 @@ from utils.error_handling import (
     tenacity_retry_decorator,
     is_retryable_exception,
 )
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
 
 
 class AnalysisError(Exception):
@@ -1416,7 +1420,7 @@ class ContradictionDetector:
         try:
             if llm_config.get("GOOGLE_API_KEY") or llm_config.get("FORCE_REAL_LLMS"):
                 primary_llm = ChatGoogleGenerativeAI(
-                    model=llm_config.get("LLM_MODEL_PRIMARY", "gemini-1.5-flash"),
+                    model=os.getenv("LLM_MODEL_PRIMARY"),
                     temperature=temperature,
                     max_tokens=max_tokens,
                     google_api_key=llm_config.get("GOOGLE_API_KEY"),
