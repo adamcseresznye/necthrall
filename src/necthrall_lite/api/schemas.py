@@ -32,7 +32,7 @@ class SynthesisOutput(BaseModel):
     answer: str = Field(
         ...,
         min_length=50,
-        max_length=2500,
+        # max_length=5000,
         description="Synthesized answer with citations",
     )
     citations: List[Citation] = Field(..., description="Citation metadata")

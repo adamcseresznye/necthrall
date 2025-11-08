@@ -7,6 +7,7 @@ from fastapi import Request
 from models.state import State, Paper
 
 from loguru import logger
+from utils.pipeline_logging import log_pipeline_stage
 
 
 class FilteringAgent:
@@ -14,16 +15,16 @@ class FilteringAgent:
     Two-pass paper filtering: BM25 (keyword) + Semantic Embeddings (meaning).
 
     Architecture:
-    1. Pass 1 - BM25 Filtering (100-300 → 50 papers, ~40ms):
+     1. Pass 1 - BM25 Filtering (100-300 → 50 papers, ~40ms):
        - Tokenize title + abstract for each paper
        - Score against query using BM25 algorithm
        - Select top 50 papers by BM25 score
 
-    2. Pass 2 - Semantic Reranking (50 → 25 papers, ~150ms):
+     2. Pass 2 - Semantic Reranking (50 → 50 papers, ~150ms):
        - Embed abstracts using cached SentenceTransformer model
        - Calculate cosine similarity with query embedding
        - Combine semantic score with metadata (citations, recency, type)
-       - Select top 25 papers by composite score
+         - Select top 50 papers by composite score
 
     Performance: ~200ms total for 300 papers (10x faster than embedding all 300)
     """
@@ -55,13 +56,13 @@ class FilteringAgent:
             state: LangGraph State with papers_metadata (deduplicated papers)
 
         Returns:
-            Updated State with filtered_papers (top 25) and filtering_scores (metrics)
+            Updated State with filtered_papers (top 50) and filtering_scores (metrics)
         """
         papers = state.papers_metadata
         query = state.optimized_query or state.original_query
 
         paper_count = len(papers)
-        logger.info(f"FilteringAgent: Filtering {paper_count} papers → top 25")
+        logger.info(f"FilteringAgent: Filtering {paper_count} papers → top 50")
 
         if paper_count == 0:
             logger.warning("FilteringAgent: No papers to filter")
@@ -79,8 +80,8 @@ class FilteringAgent:
             }
             return state
 
-        # If we have ≤25 papers, skip filtering
-        if paper_count <= 25:
+        # If we have ≤50 papers, skip filtering
+        if paper_count <= 50:
             logger.info(
                 f"FilteringAgent: Only {paper_count} papers, skipping filtering"
             )
@@ -104,19 +105,19 @@ class FilteringAgent:
         top_50_papers, bm25_scores = self._bm25_filter(papers, query, target_count=50)
         bm25_time = time.time() - start_bm25
 
-        # Pass 2: Semantic Reranking (top 50 → top 25)
+        # Pass 2: Semantic Reranking (top 50 → top 50)
         start_semantic = time.time()
-        top_25_papers, composite_scores = self._semantic_rerank(
-            top_50_papers, query, target_count=25
+        top_50_papers, composite_scores = self._semantic_rerank(
+            top_50_papers, query, target_count=50
         )
         semantic_time = time.time() - start_semantic
 
         # Update state
-        state.filtered_papers = top_25_papers
+        state.filtered_papers = top_50_papers
         state.filtering_scores = {
             "initial_count": paper_count,
             "bm25_filtered_count": len(top_50_papers),
-            "final_count": len(top_25_papers),
+            "final_count": len(top_50_papers),
             "bm25_time_ms": round(bm25_time * 1000, 1),
             "semantic_time_ms": round(semantic_time * 1000, 1),
             "total_time_ms": round((bm25_time + semantic_time) * 1000, 1),
@@ -129,9 +130,26 @@ class FilteringAgent:
         }
 
         logger.info(
-            f"FilteringAgent: {paper_count} → {len(top_25_papers)} papers "
+            f"FilteringAgent: {paper_count} → {len(top_50_papers)} papers "
             f"(BM25: {bm25_time*1000:.1f}ms, Semantic: {semantic_time*1000:.1f}ms)"
         )
+
+        # Record counts for pipeline summary
+        if not hasattr(state, "processing_stats") or state.processing_stats is None:
+            state.processing_stats = {}
+        state.processing_stats["filtering_agent"] = len(top_50_papers)
+
+        # Log pipeline stage with drop reasons if any
+        try:
+            drop_reasons = []
+            if len(top_50_papers) < paper_count:
+                drop_reasons.append("BM25+semantic filtering")
+
+            log_pipeline_stage(
+                "FilteringAgent", paper_count, len(top_50_papers), None, drop_reasons
+            )
+        except Exception:
+            logger.exception("FilteringAgent: Failed to emit pipeline stage log")
 
         return state
 
@@ -178,7 +196,7 @@ class FilteringAgent:
         return top_papers, bm25_scores
 
     def _semantic_rerank(
-        self, papers: List[Paper], query: str, target_count: int = 25
+        self, papers: List[Paper], query: str, target_count: int = 50
     ) -> Tuple[List[Paper], List[float]]:
         """
         Pass 2: Semantic embedding-based reranking with metadata scoring.
@@ -192,7 +210,7 @@ class FilteringAgent:
         Args:
             papers: List of papers to rerank (typically top 50 from BM25)
             query: Search query
-            target_count: Number of papers to keep (default: 25)
+            target_count: Number of papers to keep (default: 50)
 
         Returns:
             Tuple of (top_papers, composite_scores_list)

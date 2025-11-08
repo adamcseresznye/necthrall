@@ -99,7 +99,11 @@ OpenAlex Boolean Query:""",
         # Check if query is already well-optimized (skip LLM call for efficiency)
         if self._is_already_scientific(original_query):
             logger.info(f"Query already contains scientific terminology, using as-is")
+            # populate both search and retrieval queries: search uses the (already) scientific query,
+            # retrieval uses the original (natural-language) query for embeddings/BM25
             state.optimized_query = original_query
+            state.search_query = original_query
+            state.retrieval_query = original_query
             return state
 
         # Handle edge cases
@@ -117,22 +121,26 @@ OpenAlex Boolean Query:""",
             # Validate optimized query
             optimized_query = self._validate_and_clean(optimized_query, original_query)
 
-            # Update state
+            # Update state: search_query receives the Boolean/OR-optimized string;
+            # retrieval_query stays as the user's natural-language question for embeddings/BM25.
             state.optimized_query = optimized_query
+            state.search_query = optimized_query
+            state.retrieval_query = original_query
 
             # Log transformation for observability
-            logger.info(f"Query Optimization: '{original_query}' → '{optimized_query}'")
+            logger.info(
+                f"Query Optimization: '{original_query}' → search_query: '{optimized_query}', retrieval_query: '{original_query}'"
+            )
 
             return state
 
         except Exception as e:
             logger.error(f"QueryOptimizationAgent error: {e}. Using original query.")
-            # Fallback to original query on error - bypass validation for short queries
-            if len(original_query) < 20:
-                # For short queries, we'll directly set the field to bypass validation
-                object.__setattr__(state, "optimized_query", original_query)
-            else:
-                state.optimized_query = original_query
+            # Fallback to original query on error - populate both fields conservatively
+            safe_query = original_query
+            state.optimized_query = safe_query
+            state.search_query = safe_query
+            state.retrieval_query = safe_query
             return state
 
     def _is_already_scientific(self, query: str) -> bool:

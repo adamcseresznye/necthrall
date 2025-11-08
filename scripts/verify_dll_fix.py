@@ -30,8 +30,27 @@ print("\n2. Testing LLMClient instantiation...")
 try:
     client = LLMClient()
     print("   ✅ LLMClient instantiated successfully")
-    print(f"   Primary model: {client.primary_llm.model}")
-    print(f"   Fallback model: {client.fallback_llm.model_name}")
+    # Use safe accessor for model identifiers (some wrappers don't expose model_name)
+    try:
+        from utils.llm_client import get_safe_model_name
+
+        primary_id = get_safe_model_name(client.primary_llm)
+        fallback_id = get_safe_model_name(client.fallback_llm)
+    except Exception:
+        # Fallback to getattr for safety
+        primary_id = getattr(
+            client.primary_llm,
+            "model",
+            getattr(client.primary_llm, "model_name", "unknown"),
+        )
+        fallback_id = getattr(
+            client.fallback_llm,
+            "model",
+            getattr(client.fallback_llm, "model_name", "unknown"),
+        )
+
+    print(f"   Primary model: {primary_id}")
+    print(f"   Fallback model: {fallback_id}")
 except Exception as e:
     print(f"   ❌ FAILED: {e}")
     import traceback

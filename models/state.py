@@ -754,6 +754,14 @@ class State(BaseModel):
     optimized_query: Optional[str] = Field(
         None, description="LLM-optimized query for OpenAlex search"
     )
+    # Dual-query support: boolean search for OpenAlex, natural-language for retrieval
+    search_query: Optional[str] = Field(
+        None, description="Boolean search query to send to OpenAlex (OR-based)"
+    )
+    retrieval_query: Optional[str] = Field(
+        None,
+        description="Natural-language retrieval query used for BM25/embedding retrieval",
+    )
     refinement_count: int = Field(
         0, ge=0, le=2, description="Number of refinement iterations (max 2)"
     )
@@ -765,7 +773,7 @@ class State(BaseModel):
     )
     filtered_papers: List[Paper] = Field(
         default_factory=list,
-        description="Final 25 papers after deduplication and BM25+embedding filtering",
+        description="Final 50 papers after deduplication and BM25+embedding filtering",
     )
 
     # Filtering & Deduplication Metrics - NEW
@@ -882,7 +890,9 @@ class State(BaseModel):
         by_alias=True,  # Serialize with aliases by default for backward compatibility
     )
 
-    @field_validator("original_query", "optimized_query")
+    @field_validator(
+        "original_query", "optimized_query", "search_query", "retrieval_query"
+    )
     @classmethod
     def validate_query_length(cls, v: Optional[str]) -> Optional[str]:
         """Query should be 3-256 characters and not just whitespace"""
@@ -907,9 +917,9 @@ class State(BaseModel):
     @field_validator("filtered_papers")
     @classmethod
     def validate_filtered_papers_count(cls, v: List[Paper]) -> List[Paper]:
-        """Filtered papers should be exactly 25 (or less if insufficient results)"""
-        if len(v) > 25:
-            raise ValueError(f"Filtered papers should be ≤25, got {len(v)}")
+        """Filtered papers should be ≤50 (or less if insufficient results)"""
+        if len(v) > 50:
+            raise ValueError(f"Filtered papers should be ≤50, got {len(v)}")
         return v
 
     @field_validator("filtering_scores")
@@ -921,7 +931,7 @@ class State(BaseModel):
         if v is not None:
             expected_keys = {
                 "bm25_top_50",
-                "semantic_top_25",
+                "semantic_top_50",
                 "avg_bm25_score",
                 "avg_semantic_score",
             }

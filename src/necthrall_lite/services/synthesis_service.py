@@ -9,6 +9,7 @@ import os
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 from langchain_core.messages import SystemMessage, HumanMessage
+from utils.llm_client import get_safe_model_name
 
 from ..api.schemas import SynthesisOutput, Citation, CitationValidation
 
@@ -72,9 +73,10 @@ class SynthesisAgent:
                     }
                 )
             )
+            model_id = get_safe_model_name(llm)
             return {
                 "content": response.content,
-                "model_used": f"{provider_name}/{llm.model_name}",
+                "model_used": f"{provider_name}/{model_id}",
                 "execution_time": execution_time,
             }
         except Exception as e:

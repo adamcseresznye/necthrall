@@ -21,6 +21,34 @@ load_dotenv()
 logger.add("file.log", format="{message}", serialize=True)
 
 
+def get_safe_model_name(llm_client) -> str:
+    """Return a best-effort model identifier for an LLM client.
+
+    Tries several common attribute names used by LangChain/SDK wrappers. Falls
+    back to the class name if no attribute is present.
+    """
+    if llm_client is None:
+        return "unknown"
+
+    for attr in ("model", "model_name", "model_id", "_model_name"):
+        try:
+            if hasattr(llm_client, attr):
+                val = getattr(llm_client, attr)
+                if val:
+                    return str(val)
+        except Exception:
+            # Be defensive: some wrappers may raise on getattr
+            continue
+
+    # Last resort: infer from class name
+    class_name = llm_client.__class__.__name__
+    if "Google" in class_name or "Gemini" in class_name or "ChatGoogle" in class_name:
+        return "gemini"
+    if "Groq" in class_name or "ChatGroq" in class_name:
+        return "groq"
+    return class_name or "unknown"
+
+
 class LLMClient:
     """
     A client for interacting with LLMs, with automatic failover.
@@ -98,7 +126,7 @@ class LLMClient:
                     }
                 )
             )
-            model_name = getattr(llm, "model", getattr(llm, "model_name", "unknown"))
+            model_name = get_safe_model_name(llm)
             return self._format_response(response, f"{provider_name}/{model_name}", llm)
         except ResourceExhausted as e:
             logger.error(
