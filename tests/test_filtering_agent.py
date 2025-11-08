@@ -69,8 +69,8 @@ def test_filtering_agent_raises_error_without_model():
         FilteringAgent(bad_request)
 
 
-def test_two_pass_filtering_reduces_to_25(agent, sample_papers):
-    """Test FilteringAgent reduces 100 papers to 25 through two-pass filtering"""
+def test_two_pass_filtering_reduces_to_50(agent, sample_papers):
+    """Test FilteringAgent reduces 100 papers to 50 through two-pass filtering"""
     state = State(
         original_query="CRISPR gene editing",
         optimized_query="CRISPR-Cas9 off-target effects",
@@ -79,12 +79,12 @@ def test_two_pass_filtering_reduces_to_25(agent, sample_papers):
 
     updated_state = agent.filter_candidates(state)
 
-    assert len(updated_state.filtered_papers) == 25
+    assert len(updated_state.filtered_papers) == 50
     assert len(updated_state.papers_metadata) == 100  # Original unchanged
 
 
 def test_filtering_skips_when_papers_under_25(agent):
-    """Test FilteringAgent skips filtering if ≤25 papers"""
+    """Test FilteringAgent skips filtering if ≤50 papers"""
     papers = [
         Paper(
             title=f"Paper {i}",
@@ -233,7 +233,7 @@ def test_filtering_scores_structure(agent, sample_papers):
     # Verify counts
     assert scores["initial_count"] == 100
     assert scores["bm25_filtered_count"] == 50
-    assert scores["final_count"] == 25
+    assert scores["final_count"] == 50
 
 
 def test_filtering_handles_missing_abstracts(agent):
@@ -259,7 +259,7 @@ def test_filtering_handles_missing_abstracts(agent):
     # Should not crash, falls back to using title
     updated_state = agent.filter_candidates(state)
 
-    assert len(updated_state.filtered_papers) == 25
+    assert len(updated_state.filtered_papers) == 50
 
 
 @pytest.mark.performance
@@ -347,5 +347,5 @@ def test_filtering_with_real_embedding_model():
     updated_state = agent.filter_candidates(state)
 
     # Verify results
-    assert len(updated_state.filtered_papers) == 25
+    assert len(updated_state.filtered_papers) == 50
     assert updated_state.filtering_scores["total_time_ms"] < 500  # Should be fast

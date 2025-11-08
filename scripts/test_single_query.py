@@ -63,7 +63,7 @@ async def test_query(query: str):
 
         if result_state.synthesized_answer:
             console.print(f"\n[bold]Answer:[/]")
-            console.print(result_state.synthesized_answer[:500])
+            console.print(result_state.synthesized_answer[:2500])
 
         console.print(f"\n[bold]Agent Steps:[/]")
         for step in recorder.steps:
