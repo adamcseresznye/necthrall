@@ -96,16 +96,6 @@ OpenAlex Boolean Query:""",
         original_query = state.original_query
         logger.info(f"QueryOptimizationAgent: Optimizing query '{original_query}'")
 
-        # Check if query is already well-optimized (skip LLM call for efficiency)
-        if self._is_already_scientific(original_query):
-            logger.info(f"Query already contains scientific terminology, using as-is")
-            # populate both search and retrieval queries: search uses the (already) scientific query,
-            # retrieval uses the original (natural-language) query for embeddings/BM25
-            state.optimized_query = original_query
-            state.search_query = original_query
-            state.retrieval_query = original_query
-            return state
-
         # Handle edge cases
         if not original_query or len(original_query.strip()) < 3:
             logger.warning(f"Query too short or empty, using as-is: '{original_query}'")
