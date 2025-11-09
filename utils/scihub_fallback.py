@@ -9,6 +9,7 @@ from dataclasses import dataclass
 import time
 import shutil
 from unittest.mock import Mock as _Mock
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +46,22 @@ class SciHubResult:
 class SciHubFallback:
     """SciHub fallback with automatic domain updates and immediate cleanup."""
 
-    def __init__(self, temp_dir: Optional[str] = None, auto_cleanup: bool = True):
+    def __init__(
+        self,
+        temp_dir: Optional[str] = None,
+        auto_cleanup: bool = True,
+        max_workers: int = 5,
+        per_paper_timeout: float = 15.0,
+    ):
+        """
+        Initialize SciHub fallback with parallel download support.
+
+        Args:
+            temp_dir: Directory for temporary files
+            auto_cleanup: Whether to clean up temp files on exit
+            max_workers: Maximum concurrent downloads (default: 5)
+            per_paper_timeout: Timeout per paper download in seconds (default: 15.0)
+        """
         if not SCIDOWNL_AVAILABLE:
             logger.warning("SciDownl not available - SciHub fallback disabled")
             # Initialize attributes even if SciDownl is not available
@@ -57,6 +73,8 @@ class SciHubFallback:
             self.temp_dir.mkdir(parents=True, exist_ok=True)
             self.pdf_extractor = None
             self.auto_cleanup = auto_cleanup
+            self.max_workers = max_workers
+            self.per_paper_timeout = per_paper_timeout
             self.min_delay = 3.0  # 3 seconds between downloads
             self.last_download = 0
             self.domains_updated = False
@@ -83,10 +101,12 @@ class SciHubFallback:
                 "PDFTextExtractor unavailable - text extraction will be disabled"
             )
         self.auto_cleanup = auto_cleanup
+        self.max_workers = max_workers
+        self.per_paper_timeout = per_paper_timeout
 
         # More conservative rate limiting for better success
         self.min_delay = 2.0  # 2 seconds between downloads
-        self.timeout_per_download = 25  # 25 seconds max per download
+        self.timeout_per_download = per_paper_timeout  # Use configurable timeout
         self.last_download = 0
 
         # Domain update tracking (once per session)
@@ -148,74 +168,122 @@ class SciHubFallback:
         return self.domains_updated
 
     def download_missing_pdfs(
-        self, missing_papers: List[Dict], max_attempts: int = None
+        self,
+        missing_papers: List[Dict],
+        max_attempts: int = None,
+        max_workers: int = None,
+        per_paper_timeout: float = None,
     ) -> List[Dict]:
         """
-        Download PDFs with no artificial limits (caller handles selection).
+        Download PDFs with parallel processing for maximum throughput.
+
+        Args:
+            missing_papers: List of paper dicts with 'id' and 'doi' keys
+            max_attempts: Maximum number of papers to attempt (None = all)
+            max_workers: Override default max concurrent downloads
+            per_paper_timeout: Override default per-paper timeout
+
+        Returns:
+            List of successfully extracted PDF content dicts
         """
         if not SCIDOWNL_AVAILABLE or not missing_papers:
             return []
 
         # Use all provided papers (caller already selected appropriate ones)
-        papers_to_try = missing_papers
+        papers_to_try = (
+            missing_papers[:max_attempts] if max_attempts else missing_papers
+        )
 
         # Update domains first
         if not self.ensure_domains_updated():
             logger.warning("⚠️ SciHub domains not updated - success rate may be lower")
 
-        logger.info(
-            f"🔬 SciHub fallback: Processing {len(papers_to_try)} pre-selected papers"
+        # Use provided overrides or instance defaults
+        workers = max_workers if max_workers is not None else self.max_workers
+        timeout = (
+            per_paper_timeout
+            if per_paper_timeout is not None
+            else self.per_paper_timeout
         )
 
+        logger.info(
+            f"🔬 SciHub fallback: Processing {len(papers_to_try)} papers with {workers} concurrent downloads "
+            f"(timeout: {timeout}s per paper)"
+        )
+
+        start_time = time.time()
         pdf_contents = []
         successful_dois = []
         failed_dois = []
 
-        for i, paper in enumerate(papers_to_try):
-            paper_id = paper.get("id", f"unknown_{i}")
-            doi = self._extract_doi(paper)
+        # Use ThreadPoolExecutor for parallel downloads
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            # Submit all download tasks
+            future_to_paper = {}
 
-            if not doi:
-                failed_dois.append(f"{paper_id}: No DOI")
-                continue
+            for i, paper in enumerate(papers_to_try):
+                paper_id = paper.get("id", f"unknown_{i}")
+                doi = self._extract_doi(paper)
 
-            logger.info(f"📥 SciHub {i+1}/{len(papers_to_try)}: {doi}")
+                if doi:
+                    # Submit download task with timeout override
+                    future = executor.submit(
+                        self._download_extract_cleanup_with_timeout, paper_id, doi
+                    )
+                    future_to_paper[future] = (paper_id, doi)
+                else:
+                    failed_dois.append(f"{paper_id}: No DOI")
 
-            # Download with timeout
-            start_time = time.time()
-            result = self._download_extract_cleanup_with_timeout(paper_id, doi)
+            # Collect results as they complete
+            completed_count = 0
 
-            if result.success and result.text_content:
-                pdf_content = {
-                    "paper_id": paper_id,
-                    "content": result.text_content,
-                    "source": "scihub_fallback",
-                    "extraction_method": "pdf_download",
-                }
-                pdf_contents.append(pdf_content)
-                successful_dois.append(doi)
-                logger.info(
-                    f"✅ Success: {doi} ({result.file_size_bytes/1024:.1f}KB, {len(result.text_content)} chars)"
-                )
-            else:
-                failed_dois.append(f"{doi}: {result.error}")
-                logger.debug(f"❌ Failed: {doi} - {result.error}")
+            for future in as_completed(future_to_paper.keys()):
+                paper_id, doi = future_to_paper[future]
+                completed_count += 1
 
-            # Rate limiting
-            if i < len(papers_to_try) - 1:
-                time.sleep(self.min_delay)
+                try:
+                    result = future.result(
+                        timeout=timeout + 5
+                    )  # Extra 5s for processing
 
+                    if result.success and result.text_content:
+                        pdf_content = {
+                            "paper_id": paper_id,
+                            "content": result.text_content,
+                            "source": "scihub_fallback",
+                            "extraction_method": "pdf_download",
+                        }
+                        pdf_contents.append(pdf_content)
+                        successful_dois.append(doi)
+                        logger.info(
+                            f"✅ Success {len(pdf_contents)}/{completed_count}: {doi} "
+                            f"({result.file_size_bytes/1024:.1f}KB, {len(result.text_content)} chars)"
+                        )
+                    else:
+                        error_msg = result.error if result else "Unknown error"
+                        failed_dois.append(f"{doi}: {error_msg}")
+                        logger.debug(f"❌ Failed: {doi} - {error_msg}")
+
+                except Exception as e:
+                    failed_dois.append(f"{doi}: Exception - {e}")
+                    logger.debug(f"❌ Exception for {doi}: {e}")
+
+        total_time = time.time() - start_time
         success_rate = (
             len(pdf_contents) / len(papers_to_try) * 100 if papers_to_try else 0
         )
 
-        logger.info(f"📊 SciHub fallback complete:")
+        logger.info(f"📊 SciHub fallback complete in {total_time:.1f}s:")
         logger.info(
             f"├─ Successful: {len(pdf_contents)}/{len(papers_to_try)} ({success_rate:.1f}%)"
         )
         logger.info(f"├─ Failed: {len(failed_dois)} papers")
+        logger.info(f"├─ Avg time per paper: {total_time/len(papers_to_try):.1f}s")
         logger.info(
-            f"└─ Success DIIs: {', '.join(successful_dois[:3])}{'...' if len(successful_dois) > 3 else ''}"
+            f"├─ Speedup: ~{len(papers_to_try) * self.min_delay / total_time:.1f}x faster than sequential"
+        )
+        logger.info(
+            f"└─ Success DOIs: {', '.join(successful_dois[:3])}{'...' if len(successful_dois) > 3 else ''}"
         )
 
         return pdf_contents
@@ -225,12 +293,7 @@ class SciHubFallback:
     ) -> SciHubResult:
         """Download with timeout to prevent hanging."""
 
-        def timeout_handler(signum, frame):
-            raise TimeoutError(
-                f"SciHub download timeout after {self.timeout_per_download}s"
-            )
-
-        # Rate limiting
+        # Rate limiting - ensure minimum delay between downloads
         elapsed = time.time() - self.last_download
         if elapsed < self.min_delay:
             time.sleep(self.min_delay - elapsed)
@@ -240,13 +303,6 @@ class SciHubFallback:
         downloaded_file = None
 
         try:
-            # Set timeout alarm (Unix only - for Windows, we'll use a different approach)
-            import signal
-
-            if hasattr(signal, "SIGALRM"):
-                signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(self.timeout_per_download)
-
             # Create filename
             timestamp = int(time.time() * 1000)
             safe_id = (
@@ -258,51 +314,52 @@ class SciHubFallback:
                 f"📥 Downloading {doi} (timeout: {self.timeout_per_download}s)"
             )
 
-            # Download
-            scihub_download(keyword=doi, out=str(self.temp_dir / output_filename))
-            downloaded_file = str(self.temp_dir / output_filename)
+            # Download with timeout handling
+            download_success, download_error = self._perform_download_with_timeout(
+                doi, str(self.temp_dir / output_filename)
+            )
 
-            # Clear timeout alarm
-            if hasattr(signal, "SIGALRM"):
-                signal.alarm(0)
+            if download_success:
+                downloaded_file = str(self.temp_dir / output_filename)
+                result.download_time = time.time() - start_time
+                self.last_download = time.time()
 
-            result.download_time = time.time() - start_time
-            self.last_download = time.time()
+                # Process result (same as before)
+                if downloaded_file and os.path.exists(downloaded_file):
+                    result.file_path = downloaded_file
+                    result.file_size_bytes = os.path.getsize(downloaded_file)
+                    result.success = True
 
-            # Process result (same as before)
-            if downloaded_file and os.path.exists(downloaded_file):
-                result.file_path = downloaded_file
-                result.file_size_bytes = os.path.getsize(downloaded_file)
-                result.success = True
+                    # Extract text immediately
+                    result.text_content = self._extract_text_from_file(
+                        downloaded_file, paper_id
+                    )
 
-                # Extract text immediately
-                result.text_content = self._extract_text_from_file(
-                    downloaded_file, paper_id
-                )
-
-                if result.text_content and len(result.text_content.strip()) > 100:
-                    logger.debug(
-                        f"   ✓ Extracted {len(result.text_content)} chars in {result.download_time:.1f}s"
+                    if result.text_content and len(result.text_content.strip()) > 100:
+                        logger.debug(
+                            f"   ✓ Extracted {len(result.text_content)} chars in {result.download_time:.1f}s"
+                        )
+                    else:
+                        result.error = f"Text extraction failed ({len(result.text_content or '')} chars)"
+                        result.success = False
+                else:
+                    result.error = "Download failed - no file created"
+            else:
+                if download_error and "timeout" in download_error.lower():
+                    result.error = (
+                        f"Download timeout or failed ({self.timeout_per_download}s)"
                     )
                 else:
-                    result.error = f"Text extraction failed ({len(result.text_content or '')} chars)"
-                    result.success = False
-            else:
-                result.error = "Download failed - no file created"
+                    result.error = (
+                        f"Download exception: {download_error or 'Unknown error'}"
+                    )
+                result.download_time = time.time() - start_time
 
-        except TimeoutError as e:
-            result.error = f"Download timeout ({self.timeout_per_download}s)"
-            result.download_time = time.time() - start_time
-            logger.debug(f"   ⏰ Timeout: {doi}")
         except Exception as e:
             result.error = f"Download exception: {str(e)}"
             result.download_time = time.time() - start_time
             logger.debug(f"   ❌ Exception: {e}")
         finally:
-            # Clear timeout alarm
-            if hasattr(signal, "SIGALRM"):
-                signal.alarm(0)
-
             self.last_download = time.time()
 
             # Cleanup file
@@ -314,6 +371,44 @@ class SciHubFallback:
                     logger.warning(f"   ⚠️ Cleanup failed: {cleanup_error}")
 
         return result
+
+    def _perform_download_with_timeout(
+        self, doi: str, output_path: str
+    ) -> tuple[bool, Optional[str]]:
+        """Perform the actual download with timeout handling."""
+
+        def timeout_handler(signum, frame):
+            raise TimeoutError(
+                f"SciHub download timeout after {self.timeout_per_download}s"
+            )
+
+        try:
+            # Set timeout alarm (Unix only - for Windows, we'll use a different approach)
+            import signal
+
+            if hasattr(signal, "SIGALRM"):
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(self.timeout_per_download)
+
+            # Download
+            scihub_download(keyword=doi, out=output_path)
+
+            # Clear timeout alarm
+            if hasattr(signal, "SIGALRM"):
+                signal.alarm(0)
+
+            return True, None
+
+        except TimeoutError as e:
+            logger.debug(f"   ⏰ Timeout: {doi}")
+            return False, str(e)
+        except Exception as e:
+            logger.debug(f"   ❌ Download failed: {e}")
+            return False, str(e)
+        finally:
+            # Clear timeout alarm
+            if hasattr(signal, "SIGALRM"):
+                signal.alarm(0)
 
     def _extract_text_from_file(self, file_path: str, paper_id: str) -> Optional[str]:
         """Extract text from PDF file using the project's PDFTextExtractor."""
