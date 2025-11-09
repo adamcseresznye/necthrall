@@ -41,7 +41,7 @@ class ProcessingAgent:
         """
         self.app = app
         self.section_detector = SectionDetector()
-        self.embedding_manager = EmbeddingManager(app, batch_size=32)
+        self.embedding_manager = EmbeddingManager(app, batch_size=128)  # 32
         self.hybrid_retriever = HybridRetriever()
         self.reranker = CrossEncoderReranker()
 
