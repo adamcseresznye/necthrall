@@ -5,8 +5,6 @@ This module provides a LangChain PromptTemplate for synthesizing scientific info
 with strict citation grounding and contradiction handling.
 """
 
-from langchain_core.prompts import PromptTemplate
-from langchain_core.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
 from typing import List, Optional
 import re

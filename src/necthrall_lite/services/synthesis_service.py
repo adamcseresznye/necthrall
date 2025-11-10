@@ -6,9 +6,6 @@ from loguru import logger
 import os
 
 
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_groq import ChatGroq
-from langchain_core.messages import SystemMessage, HumanMessage
 from utils.llm_client import get_safe_model_name
 
 from ..api.schemas import SynthesisOutput, Citation, CitationValidation
