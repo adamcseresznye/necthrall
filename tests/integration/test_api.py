@@ -3,15 +3,35 @@ import time
 import os
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def set_test_env():
-    """ "Set minimal test environment variables for config validation"""
+    """Set minimal test environment variables for config validation"""
+    # Save original values
+    original_values = {
+        "SEMANTIC_SCHOLAR_API_KEY": os.environ.get("SEMANTIC_SCHOLAR_API_KEY"),
+        "GOOGLE_API_KEY": os.environ.get("GOOGLE_API_KEY"),
+        "GROQ_API_KEY": os.environ.get("GROQ_API_KEY"),
+        "QUERY_OPTIMIZATION_MODEL": os.environ.get("QUERY_OPTIMIZATION_MODEL"),
+        "SYNTHESIS_MODEL": os.environ.get("SYNTHESIS_MODEL"),
+        "SKIP_DOTENV_LOADER": os.environ.get("SKIP_DOTENV_LOADER"),
+    }
+
+    # Set test values
     os.environ["SEMANTIC_SCHOLAR_API_KEY"] = "test_key"
     os.environ["GOOGLE_API_KEY"] = "test_key"
     os.environ["GROQ_API_KEY"] = "test_key"
     os.environ["QUERY_OPTIMIZATION_MODEL"] = "test_model"
     os.environ["SYNTHESIS_MODEL"] = "test_model"
     os.environ["SKIP_DOTENV_LOADER"] = "1"
+
+    yield
+
+    # Restore original values
+    for key, value in original_values.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
 
 
 @pytest.fixture
@@ -22,8 +42,8 @@ def app():
 
 
 @pytest.mark.integration
-def test_health_endpoint(app):
-    """ "Test health endpoint returns 200 status"""
+def test_health_endpoint(app, set_test_env):
+    """Test health endpoint returns 200 status"""
     from fastapi.testclient import TestClient
 
     client = TestClient(app)
@@ -37,8 +57,8 @@ def test_health_endpoint(app):
 
 
 @pytest.mark.integration
-def test_root_endpoint(app):
-    """ "Test root endpoint returns 200 status with API documentation links"""
+def test_root_endpoint(app, set_test_env):
+    """Test root endpoint returns 200 status with API documentation links"""
     from fastapi.testclient import TestClient
 
     client = TestClient(app)
@@ -52,8 +72,8 @@ def test_root_endpoint(app):
 
 
 @pytest.mark.integration
-def test_health_endpoint_response_time(app):
-    """ "Test health endpoint response time < 100ms"""
+def test_health_endpoint_response_time(app, set_test_env):
+    """Test health endpoint response time < 100ms"""
     from fastapi.testclient import TestClient
 
     client = TestClient(app)
@@ -67,8 +87,8 @@ def test_health_endpoint_response_time(app):
 
 
 @pytest.mark.integration
-def test_startup_event_logs_configuration(app):
-    """ "Test startup event logs configuration successfully"""
+def test_startup_event_logs_configuration(app, set_test_env):
+    """Test startup event logs configuration successfully"""
     # This test verifies that the app can start without config validation errors
     # In a real scenario, we'd check logs, but for integration test, we ensure no exceptions
     from fastapi.testclient import TestClient

@@ -8,7 +8,7 @@ from loguru import logger
 
 
 class State(BaseModel):
-    """Progressive-enrichment State used by the Necthrall Lite pipeline.
+    """Progressive-enrichment State used by the Necthrall pipeline.
 
     The State is intentionally lean and uses Optional fields so agents can
     populate it step-by-step (progressive enrichment). Field-by-field

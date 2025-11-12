@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "necthrall"
+version = "0.1.0"
+description = "Necthrall Lite MVP - AI scientific research assistant"
+authors = [
+    {name = "Adam Cseresznye", email = "adam@example.com"},
+]
+dependencies = [
+    "aiohttp>=3.9.0",
+    "litellm>=1.0.0",
+    "loguru>=0.7.0",
+    "python-dotenv>=1.0.0",
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "sentence-transformers>=2.2.0",
+    "faiss-cpu>=1.7.0",
+    "PyMuPDF>=1.23.0",
+    "torch>=2.0.0",
+]
+requires-python = ">=3.11"
+readme = "README.md"
+
+[project.optional-dependencies]
+dev = [
+    "black",
+    "isort",
+    "mypy",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["agents", "config", "models", "rag", "retrieval", "utils", "scripts"]
+
+[tool.setuptools.package-dir]
+"" = "."
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests",
+    "slow: Slow tests",
+    "pdf_dependent: Tests that depend on PDF processing",
+]
