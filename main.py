@@ -3,11 +3,33 @@
 Exposes a /health endpoint for readiness checks.
 """
 
-from fastapi import FastAPI
+# CRITICAL: Import torch FIRST to avoid DLL initialization errors on Windows
+# See: https://github.com/pytorch/pytorch/issues/91966
+import os
+
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+try:
+    import torch
+except ImportError:
+    pass  # torch may not be installed yet
+
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 from loguru import logger
 from datetime import datetime
 import sys
+import time
+import numpy as np
+from services.query_service import (
+    QueryOptimizationError,
+    SemanticScholarError,
+    QualityGateError,
+    RankingError,
+)
 
 # Configure loguru
 logger.remove()
@@ -18,7 +40,7 @@ logger.add(
 )
 
 app = FastAPI(
-    title="Necthrall Lite API",
+    title="Necthrall API",
     description="AI-powered scientific research assistant",
     version="3.0.0-mvp",
 )
@@ -33,12 +55,42 @@ app.add_middleware(
 )
 
 
+# Pydantic models
+class QueryRequest(BaseModel):
+    """Request model for /query endpoint."""
+
+    query: str = Field(
+        ..., min_length=1, max_length=500, description="User query string"
+    )
+
+
+class QueryResponse(BaseModel):
+    """Response model for /query endpoint."""
+
+    query: str
+    optimized_queries: dict
+    quality_gate: dict
+    finalists: list = Field(default_factory=list)
+    execution_time: float
+    timing_breakdown: dict
+
+
 @app.on_event("startup")
 async def startup_event():
-    """Validate configuration at startup"""
+    """Validate configuration at startup
+
+    Week 1: No embedding model initialization - SPECTER2 embeddings come from Semantic Scholar API.
+    Week 2: Will add local embedding model for passage-level chunking.
+    """
     try:
         import config  # Triggers validation
 
+        # Initialize query service (no embedding model needed for Week 1)
+        from services.query_service import QueryService
+
+        app.state.query_service = QueryService()
+
+        logger.info("Query service initialized")
         logger.info("Application startup successful")
         logger.info(f"Query optimization model: {config.QUERY_OPTIMIZATION_MODEL}")
         logger.info(f"Synthesis model: {config.SYNTHESIS_MODEL}")
@@ -73,6 +125,47 @@ async def health_check():
             "error": str(e),
             "timestamp": datetime.now().isoformat(),
         }
+
+
+@app.post("/query", response_model=QueryResponse)
+async def query_endpoint(request: QueryRequest):
+    """Execute the Week 1 pipeline: query_optimization → semantic_scholar_search → quality_gate → composite_scoring.
+
+    Accepts a user query and returns top 5-10 ranked papers with execution timing and quality metrics.
+    """
+    try:
+        # Use the query service to process the request
+        result = await app.state.query_service.process_query(request.query)
+
+        return QueryResponse(
+            query=result.query,
+            optimized_queries=result.optimized_queries,
+            quality_gate=result.quality_gate,
+            finalists=result.finalists,
+            execution_time=result.execution_time,
+            timing_breakdown=result.timing_breakdown,
+        )
+
+    except QueryOptimizationError as e:
+        logger.exception("Query optimization error for query: {}", request.query[:100])
+        raise HTTPException(status_code=e.http_status, detail=e.message)
+    except SemanticScholarError as e:
+        logger.exception("Semantic Scholar error for query: {}", request.query[:100])
+        raise HTTPException(status_code=e.http_status, detail=e.message)
+    except QualityGateError as e:
+        logger.exception("Quality gate error for query: {}", request.query[:100])
+        raise HTTPException(status_code=e.http_status, detail=e.message)
+    except RankingError as e:
+        logger.exception("Ranking error for query: {}", request.query[:100])
+        raise HTTPException(status_code=e.http_status, detail=e.message)
+    except Exception as e:
+        logger.exception(
+            "Unexpected error in query endpoint for query: {}", request.query[:100]
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="An unexpected error occurred. Please try again later.",
+        )
 
 
 if __name__ == "__main__":

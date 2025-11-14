@@ -76,14 +76,15 @@ class SemanticScholarClient:
                 "citationCount",
                 "influentialCitationCount",
                 "openAccessPdf",
-                "embedding.specter_v2",
+                # "embedding.specter_v2",
+                "embedding.specter_v1",
                 "authors",
                 "venue",
                 "externalIds",
             ]
 
         # Log entry with a short preview so we can diagnose slow queries
-        logger.debug("multi_query_search entry: queries=%s", [q[:80] for q in queries])
+        logger.info(f"multi_query_search entry: queries= {[q[:80] for q in queries]}")
 
         # Use a pooled connector and a client timeout for better performance
         connector = aiohttp.TCPConnector(limit=100, limit_per_host=25)
@@ -99,14 +100,46 @@ class SemanticScholarClient:
             start = time.perf_counter()
             raw_results = await asyncio.gather(*tasks, return_exceptions=True)
             elapsed = time.perf_counter() - start
-            logger.debug("multi_query_search finished in {:.3f}s", elapsed)
+            logger.info("multi_query_search finished in {:.3f}s", elapsed)
+
+        # Log how many raw hits we received per input query (primary/broad/alternative
+        # ordering is expected by the caller). This helps diagnose which variant
+        # produced the most results and identify coverage issues early.
+        try:
+            # Always log the raw_results structure so we can inspect exact return types/values
+            logger.debug(f"Semantic Scholar raw_results repr: {raw_results!r}")
+
+            labels = ["primary", "broad", "alternative"]
+            for i, res in enumerate(raw_results):
+                label = labels[i] if i < len(labels) else f"query_{i}"
+                preview = queries[i][:80] if i < len(queries) else ""
+
+                # Successful list of hits
+                if isinstance(res, list):
+                    logger.info(
+                        f"Semantic Scholar raw hits: {label} returned {len(res)} results (query preview: '{preview}')"
+                    )
+                # Exception returned by asyncio.gather(..., return_exceptions=True)
+                elif isinstance(res, Exception):
+                    # Use exception-level logging so stack/trace is captured
+                    logger.exception(
+                        f"Semantic Scholar query {label} failed for preview '{preview}': {res}"
+                    )
+                else:
+                    # Unexpected return type — include repr for diagnosis
+                    logger.info(
+                        f"Semantic Scholar raw hits: {label} returned unexpected type {type(res)} (value: {res!r}) (query preview: '{preview}')"
+                    )
+        except Exception:
+            # Non-fatal logging helper; do not fail the search flow if logging errors occur
+            logger.exception("Failed to log per-query hit counts")
 
         # Collect successful results, log exceptions
         hits: List[Dict[str, Any]] = []
         for idx, r in enumerate(raw_results):
             if isinstance(r, Exception):
                 # Log with query context and exception stack
-                logger.exception("Query failed: %s", queries[idx])
+                logger.exception(f"Query failed: {queries[idx]}")
             elif isinstance(r, list):
                 hits.extend(r)
             else:
@@ -129,13 +162,43 @@ class SemanticScholarClient:
 
         papers = list(seen.values())
 
-        # Fetch embeddings for all papers using batch paper details endpoint
-        if papers:
-            logger.debug("Fetching embeddings for %d papers", len(papers))
-            papers = await self._enrich_with_embeddings(papers)
+        # Note: Embeddings are already included in search results when requesting
+        # "embedding.specter_v1" in the fields parameter. The separate batch enrichment
+        # step has been removed to avoid redundant API calls and 429 rate limits.
+
+        # Post-enrichment summary: count how many papers actually have a non-empty
+        # embedding vector. This provides quick visibility into embedding coverage
+        # in console logs without changing pipeline behavior.
+        embedded = 0
+        for p in papers:
+            emb_block = p.get("embedding") or {}
+            if not emb_block:
+                continue
+            # Consider any non-empty list/sequence as an embedding vector
+            has_vec = False
+            for v in emb_block.values():
+                if v is None:
+                    continue
+                try:
+                    if isinstance(v, (list, tuple)) and len(v) > 0:
+                        has_vec = True
+                        break
+                    # numpy arrays and similar have __len__
+                    if hasattr(v, "__len__") and len(v) > 0:
+                        has_vec = True
+                        break
+                except Exception:
+                    # defensive: ignore anything that errors when checking len
+                    continue
+            if has_vec:
+                embedded += 1
 
         logger.info(
-            "multi_query_search returning %d papers (deduped & filtered)", len(papers)
+            f"Post-enrichment: {len(papers)} papers returned, {embedded} have embeddings"
+        )
+
+        logger.info(
+            f"multi_query_search returning {len(papers)} papers (deduped & filtered)"
         )
         return papers
 
@@ -206,7 +269,7 @@ class SemanticScholarClient:
                         if retry_after:
                             try:
                                 wait = float(retry_after)
-                                logger.debug("Received Retry-After=%s, sleeping", wait)
+                                logger.info("Received Retry-After=%s, sleeping", wait)
                                 await asyncio.sleep(wait)
                             except Exception:
                                 pass
@@ -297,11 +360,16 @@ class SemanticScholarClient:
                                         embedding_map[pid] = emb
 
                             # Update papers with embeddings
+                            updated_count = 0
                             for paper in batch:
                                 pid = paper["paperId"]
                                 if pid in embedding_map:
                                     emb_data = embedding_map[pid]
-                                    # Extract specter_v2 vector
+                                    # Ensure embedding dict exists
+                                    if "embedding" not in paper:
+                                        paper["embedding"] = {}
+
+                                    # Extract specter_v2 vector (768-dimensional SPECTER2)
                                     if (
                                         isinstance(emb_data, dict)
                                         and "vector" in emb_data
@@ -309,15 +377,20 @@ class SemanticScholarClient:
                                         paper["embedding"]["specter_v2"] = emb_data[
                                             "vector"
                                         ]
+                                        updated_count += 1
                                     elif isinstance(emb_data, list):
                                         # Sometimes API returns vector directly
                                         paper["embedding"]["specter_v2"] = emb_data
+                                        updated_count += 1
+
+                            logger.info(
+                                f"Enriched {updated_count}/{len(batch)} papers with SPECTER2 embeddings"
+                            )
                         else:
                             text = await resp.text()
+                            # Use f-string so the actual status and response snippet are visible
                             logger.warning(
-                                "Failed to fetch embeddings batch (status %d): %s",
-                                resp.status,
-                                text[:200],
+                                f"Failed to fetch embeddings batch (status {resp.status}): {text[:200]}"
                             )
                 except Exception as e:
                     logger.exception("Error fetching embeddings batch: %s", e)
@@ -333,13 +406,22 @@ class SemanticScholarClient:
         defaults when fields are missing. Inline comments explain each
         transformation to aid readability.
         """
-        # Extract embedding if present. The API may return either a nested
-        # 'embedding' dict containing 'specter_v2' or a flattened key
-        # 'embedding.specter_v2'. Prefer nested form when available.
+        # Extract embedding if present. The search API returns embeddings as a nested
+        # dict with 'model' and 'vector' keys (e.g., {'model': 'specter_v1', 'vector': [...]}).
+        # We normalize this to store the vector under 'specter_v2' key for consistency
+        # with downstream pipeline expectations (quality_gate, ranking_agent).
         specter_vec = None
         emb_block = paper.get("embedding")
         if isinstance(emb_block, dict):
-            specter_vec = emb_block.get("specter_v2")
+            # Check for the nested structure returned by search API
+            if "vector" in emb_block:
+                specter_vec = emb_block["vector"]
+            # Fallback: check for already-normalized specter_v2 key
+            elif "specter_v2" in emb_block:
+                specter_vec = emb_block["specter_v2"]
+        # Handle flattened key format (rare, for backwards compatibility)
+        elif "embedding.specter_v1" in paper:
+            specter_vec = paper.get("embedding.specter_v1")
         elif "embedding.specter_v2" in paper:
             specter_vec = paper.get("embedding.specter_v2")
 
@@ -356,7 +438,7 @@ class SemanticScholarClient:
             "influentialCitationCount": paper.get("influentialCitationCount", 0),
             # PDF info: ensure we always return a dict (may be empty)
             "openAccessPdf": paper.get("openAccessPdf") or {},
-            # Embedding: only include specter_v2 when available
+            # Embedding: normalize to specter_v2 key regardless of source model
             "embedding": {"specter_v2": specter_vec} if specter_vec is not None else {},
             # Authors list and venue
             "authors": paper.get("authors", []),
