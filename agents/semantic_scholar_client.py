@@ -23,6 +23,10 @@ from typing import Any, Dict, List, Optional
 
 import aiohttp
 from loguru import logger
+import sys
+
+logger.remove()
+logger.add(sys.stderr, level="INFO")
 
 SEMANTIC_SCHOLAR_SEARCH_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
 
@@ -76,8 +80,7 @@ class SemanticScholarClient:
                 "citationCount",
                 "influentialCitationCount",
                 "openAccessPdf",
-                # "embedding.specter_v2",
-                "embedding.specter_v1",
+                "embedding",
                 "authors",
                 "venue",
                 "externalIds",
@@ -162,13 +165,7 @@ class SemanticScholarClient:
 
         papers = list(seen.values())
 
-        # Note: Embeddings are already included in search results when requesting
-        # "embedding.specter_v1" in the fields parameter. The separate batch enrichment
-        # step has been removed to avoid redundant API calls and 429 rate limits.
-
-        # Post-enrichment summary: count how many papers actually have a non-empty
-        # embedding vector. This provides quick visibility into embedding coverage
-        # in console logs without changing pipeline behavior.
+        # count how many papers actually have a non-empty embedding vector
         embedded = 0
         for p in papers:
             emb_block = p.get("embedding") or {}
@@ -194,11 +191,7 @@ class SemanticScholarClient:
                 embedded += 1
 
         logger.info(
-            f"Post-enrichment: {len(papers)} papers returned, {embedded} have embeddings"
-        )
-
-        logger.info(
-            f"multi_query_search returning {len(papers)} papers (deduped & filtered)"
+            f"multi_query_search returning {len(papers)} papers, {embedded} have embeddings (deduped & filtered)"
         )
         return papers
 
@@ -241,7 +234,14 @@ class SemanticScholarClient:
 
         This method uses the shared semaphore to limit concurrency.
         """
-        params = {"query": query, "limit": str(limit), "fields": ",".join(fields)}
+        params = {
+            "query": query,
+            "limit": str(limit),
+            "fields": ",".join(fields),
+            "sort": "relevance",
+            "year": "1990-",
+            "openAccessPdf": "",
+        }
         headers = {}
         if self.api_key:
             headers["x-api-key"] = self.api_key
@@ -310,95 +310,6 @@ class SemanticScholarClient:
         finally:
             self._semaphore.release()
 
-    async def _enrich_with_embeddings(
-        self, papers: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
-        """Fetch embeddings for papers using the batch paper details endpoint.
-
-        The search API doesn't return embeddings, so we need to make separate
-        requests to get them. We use the batch endpoint to fetch up to 500
-        papers at a time.
-        """
-        # Semantic Scholar batch endpoint for paper details
-        batch_url = "https://api.semanticscholar.org/graph/v1/paper/batch"
-
-        # Process in batches of 500 (API limit)
-        batch_size = 500
-        connector = aiohttp.TCPConnector(limit=100, limit_per_host=25)
-        timeout = aiohttp.ClientTimeout(total=30)
-
-        async with aiohttp.ClientSession(
-            connector=connector, timeout=timeout
-        ) as session:
-            for i in range(0, len(papers), batch_size):
-                batch = papers[i : i + batch_size]
-                paper_ids = [p["paperId"] for p in batch]
-
-                # Prepare request body
-                params = {"fields": "paperId,embedding"}
-                headers = {"Content-Type": "application/json"}
-                if self.api_key:
-                    headers["x-api-key"] = self.api_key
-
-                await self._semaphore.acquire()
-                try:
-                    async with session.post(
-                        batch_url,
-                        params=params,
-                        headers=headers,
-                        json={"ids": paper_ids},
-                    ) as resp:
-                        if resp.status == 200:
-                            batch_data = await resp.json()
-                            # batch_data is a list of papers with embeddings
-                            embedding_map = {}
-                            for paper_detail in batch_data:
-                                if paper_detail and "paperId" in paper_detail:
-                                    pid = paper_detail["paperId"]
-                                    emb = paper_detail.get("embedding")
-                                    if emb:
-                                        embedding_map[pid] = emb
-
-                            # Update papers with embeddings
-                            updated_count = 0
-                            for paper in batch:
-                                pid = paper["paperId"]
-                                if pid in embedding_map:
-                                    emb_data = embedding_map[pid]
-                                    # Ensure embedding dict exists
-                                    if "embedding" not in paper:
-                                        paper["embedding"] = {}
-
-                                    # Extract specter_v2 vector (768-dimensional SPECTER2)
-                                    if (
-                                        isinstance(emb_data, dict)
-                                        and "vector" in emb_data
-                                    ):
-                                        paper["embedding"]["specter_v2"] = emb_data[
-                                            "vector"
-                                        ]
-                                        updated_count += 1
-                                    elif isinstance(emb_data, list):
-                                        # Sometimes API returns vector directly
-                                        paper["embedding"]["specter_v2"] = emb_data
-                                        updated_count += 1
-
-                            logger.info(
-                                f"Enriched {updated_count}/{len(batch)} papers with SPECTER2 embeddings"
-                            )
-                        else:
-                            text = await resp.text()
-                            # Use f-string so the actual status and response snippet are visible
-                            logger.warning(
-                                f"Failed to fetch embeddings batch (status {resp.status}): {text[:200]}"
-                            )
-                except Exception as e:
-                    logger.exception("Error fetching embeddings batch: %s", e)
-                finally:
-                    self._semaphore.release()
-
-        return papers
-
     def normalize_paper(self, paper: Dict[str, Any]) -> Dict[str, Any]:
         """Normalize a raw paper dict from Semantic Scholar into the pipeline schema.
 
@@ -439,7 +350,7 @@ class SemanticScholarClient:
             # PDF info: ensure we always return a dict (may be empty)
             "openAccessPdf": paper.get("openAccessPdf") or {},
             # Embedding: normalize to specter_v2 key regardless of source model
-            "embedding": {"specter_v2": specter_vec} if specter_vec is not None else {},
+            "embedding": {"specter": specter_vec} if specter_vec is not None else {},
             # Authors list and venue
             "authors": paper.get("authors", []),
             "venue": paper.get("venue"),

@@ -322,9 +322,9 @@ class RankingAgent:
             Composite scores array (0.0-1.0)
         """
         return (
-            0.4 * semantic_scores
-            + 0.3 * authority_scores
-            + 0.2 * impact_scores
+            # 0.4 * semantic_scores  # 0.4
+            0.3 * authority_scores
+            + 0.2 * impact_scores  # 0.2
             + 0.1 * recency_scores
         )
 

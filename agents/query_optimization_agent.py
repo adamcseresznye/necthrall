@@ -176,6 +176,7 @@ class QueryOptimizationAgent:
         - Use - to exclude terms: -animal (for human studies only)
         - Keep queries between 3-12 keywords for optimal results
         - Match terminology commonly found in paper titles/abstracts
+        - Keep PRIMARY/BROAD/ALTERNATIVE variants focused on the core topic. Avoid expanding into loosely related subtopics. 
 
         Return ONLY valid JSON with no additional text:
 
