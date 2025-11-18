@@ -102,7 +102,7 @@ class TestQueryEndpoint:
                     "citationCount": 50,
                     "influentialCitationCount": 10,
                     "openAccessPdf": {"url": "https://example.com/p1.pdf"},
-                    "embedding": {"specter_v2": np.random.rand(384).tolist()},
+                    "embedding": {"specter": np.random.rand(384).tolist()},
                     "authors": [{"name": "Dr. Smith"}],
                     "venue": "Journal of Cardiology",
                 }

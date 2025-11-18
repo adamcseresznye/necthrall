@@ -143,11 +143,11 @@ class QueryOptimizationAgent:
         **Step 2: Generate Four Query Variants**
         Create four distinct search queries optimized for different purposes:
 
-        1. **final_rephrase**: Focused technical query for passage-level semantic search
-        - Purpose: Finding specific relevant passages within papers
-        - Format: Concise phrase (5-10 words) with precise scientific terminology
-        - Remove ambiguity, narrative elements, and filler words
-        - Example: "intermittent fasting cardiovascular disease risk mechanisms"
+        1. **final_rephrase**: Refined natural language query for semantic retrieval
+        - Purpose: A clear, grammatically correct question or statement for embedding-based search.
+        - Format: Full sentence or question structure. NOT a list of keywords.
+        - Action: Fix grammar, remove conversational fluff (e.g., "I was wondering if..."), and replace vague terms with precise scientific terminology.
+        - Example: "What are the molecular mechanisms linking intermittent fasting to cardiovascular disease risk?"
 
         2. **primary**: Precise keyword query for Semantic Scholar paper search
         - Purpose: Exact matching in paper titles and abstracts

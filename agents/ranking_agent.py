@@ -48,11 +48,29 @@ def _compute_bm25s_ranks(query: str, corpus: List[str]) -> np.ndarray:
 
     try:
         corpus_tokens = bm25s.tokenize(corpus, stopwords="english")
+        # Guard against documents that tokenize to empty lists. If every
+        # document is empty (no tokens), bm25s may compute an average
+        # document length of zero which leads to a divide-by-zero and
+        # RuntimeWarning inside the bm25s scoring implementation. Rather
+        # than letting the third-party library emit warnings, return a
+        # neutral rank vector so downstream scoring remains stable.
+        doc_lengths = [len(toks) for toks in corpus_tokens]
+        if sum(doc_lengths) == 0:
+            logger.debug(
+                "BM25: all documents tokenized to empty; returning neutral ranks"
+            )
+            return np.full(len(corpus), len(corpus), dtype=int)
         retriever = bm25s.BM25(method="lucene")
-        retriever.index(corpus_tokens)
         query_tokens = bm25s.tokenize(query, stopwords="english")
 
-        _, scores = retriever.retrieve(query_tokens, k=len(corpus))
+        # The bm25s scoring internals may emit a RuntimeWarning (numpy
+        # 'invalid value encountered in scalar divide') in some edge cases
+        # (e.g. unexpected zero document lengths). Wrap both indexing and
+        # retrieval in a numpy.errstate context to suppress those spurious
+        # runtime warnings while allowing normal numeric behavior to proceed.
+        with np.errstate(invalid="ignore"):
+            retriever.index(corpus_tokens)
+            _, scores = retriever.retrieve(query_tokens, k=len(corpus))
         scores = scores.flatten()
 
         if scores.max() > 0:

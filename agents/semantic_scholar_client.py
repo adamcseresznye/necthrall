@@ -211,10 +211,7 @@ class SemanticScholarClient:
             except Exception as exc:
                 # Log and retry with exponential backoff on transient errors
                 logger.exception(
-                    "Query attempt %d/%d failed for query=%s",
-                    attempt,
-                    max_retries,
-                    query,
+                    f"Query attempt {attempt}/{max_retries} failed for query={query}",
                 )
                 if attempt == max_retries:
                     raise

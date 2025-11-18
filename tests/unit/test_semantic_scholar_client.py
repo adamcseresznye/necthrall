@@ -101,9 +101,9 @@ async def test_happy_path_three_queries(monkeypatch):
     assert 150 <= len(papers) <= 300
     assert elapsed < 3.0
 
-    # Embedding present and has 768 dims
+    # Embedding present under normalized key and has 768 dims
     for p in papers:
-        emb = p.get("embedding", {}).get("specter_v2")
+        emb = p.get("embedding", {}).get("specter")
         assert emb is not None
         assert len(emb) == 768
 

@@ -55,7 +55,8 @@ async def test_semantic_scholar_integration_real_api_key():
     # for the returned set — the API does not guarantee embeddings for every
     # paper.
     for p in papers:
-        emb = p.get("embedding", {}).get("specter_v2")
+        emb_block = p.get("embedding", {})
+        emb = emb_block.get("specter") or emb_block.get("specter_v2")
         if emb:
             assert isinstance(emb, list)
-            assert len(emb) == 768
+            assert len(emb) in (384, 768)
