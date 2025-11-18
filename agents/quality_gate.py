@@ -30,7 +30,6 @@ def validate_quality(
     - Minimum paper count (>=25)
     - Embedding coverage (>=60% have SPECTER2 embeddings)
     - Abstract coverage (>=60% have abstracts)
-    - Median semantic similarity (>=0.75 against query embedding) [Week 2+ only]
 
     Args:
         papers: List of paper dictionaries from Semantic Scholar API.
@@ -40,7 +39,7 @@ def validate_quality(
     Returns:
         Dict with keys:
         - passed: bool indicating if all criteria met
-        - metrics: Dict with paper_count, embedding_coverage, abstract_coverage, median_similarity
+        - metrics: Dict with paper_count, embedding_coverage, abstract_coverage
         - reason: Human-readable explanation (empty string if passed)
 
     Raises:
@@ -56,11 +55,10 @@ def validate_quality(
     # Log metrics for monitoring
     logger.info(
         "Quality gate metrics computed: paper_count={}, embedding_coverage={:.2%}, "
-        "abstract_coverage={:.2%}, median_similarity={:.3f}",
+        "abstract_coverage={:.2%}",
         metrics["paper_count"],
         metrics["embedding_coverage"],
         metrics["abstract_coverage"],
-        metrics["median_similarity"],
     )
 
     # Check against thresholds
@@ -123,7 +121,7 @@ def _compute_metrics(papers: List[Dict], query_embedding: np.ndarray) -> Dict:
     for p in papers:
         emb_dict = p.get("embedding")
         if emb_dict is not None and isinstance(emb_dict, dict):
-            emb = emb_dict.get("specter_v2")
+            emb = emb_dict.get("specter")
             if emb is not None and isinstance(emb, (list, np.ndarray)):
                 try:
                     emb_array = np.array(emb, dtype=np.float32)
@@ -139,42 +137,11 @@ def _compute_metrics(papers: List[Dict], query_embedding: np.ndarray) -> Dict:
     embedding_count = len(embeddings)
     embedding_coverage = embedding_count / paper_count if paper_count > 0 else 0.0
 
-    # Compute median similarity
-    median_similarity = _compute_median_similarity(embeddings, query_embedding)
-
     return {
         "paper_count": paper_count,
         "embedding_coverage": embedding_coverage,
         "abstract_coverage": abstract_coverage,
-        "median_similarity": median_similarity,
     }
-
-
-def _compute_median_similarity(
-    embeddings: List[np.ndarray], query_embedding: np.ndarray | None
-) -> float:
-    """Compute median cosine similarity between paper embeddings and query embedding.
-
-    Uses NumPy vectorized operations for performance. Handles empty embeddings gracefully.
-    For Week 1: Returns 1.0 if query_embedding is None (skips semantic similarity check).
-    """
-    if query_embedding is None:
-        # Week 1: No local embedding model, skip semantic similarity check
-        return 1.0
-
-    if not embeddings:
-        return 0.0
-
-    # Stack embeddings into 2D array for batch computation
-    emb_array = np.stack(embeddings)  # Shape: (n_embeddings, 384)
-
-    # Compute cosine similarities (dot product since SPECTER2 embeddings are normalized)
-    similarities = np.dot(emb_array, query_embedding)  # Shape: (n_embeddings,)
-
-    # Clip to valid cosine range for safety
-    similarities = np.clip(similarities, -1.0, 1.0)
-
-    return float(np.median(similarities))
 
 
 def _check_thresholds(metrics: Dict) -> Tuple[bool, str]:
@@ -190,12 +157,6 @@ def _check_thresholds(metrics: Dict) -> Tuple[bool, str]:
         "abstract_coverage": (
             0.6,
             "low abstract coverage ({value:.2%} < {threshold:.0%})",
-        ),
-        # Week 1: median_similarity always 1.0 (query_embedding is None)
-        # Week 2+: will use 0.75 threshold with local embeddings
-        "median_similarity": (
-            0.75,
-            "low median similarity ({value:.3f} < {threshold:.3f})",
         ),
     }
 

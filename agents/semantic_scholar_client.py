@@ -269,42 +269,35 @@ class SemanticScholarClient:
                         if retry_after:
                             try:
                                 wait = float(retry_after)
-                                logger.info("Received Retry-After=%s, sleeping", wait)
+                                logger.info(f"Received Retry-After={wait}, sleeping")
                                 await asyncio.sleep(wait)
                             except Exception:
                                 pass
                         text = await resp.text()
                         logger.error(
-                            "Semantic Scholar rate limited (429) for query=%s: %s",
-                            query,
-                            text,
+                            f"Semantic Scholar rate limited (429) for {query}: {text}"
                         )
                         raise RuntimeError("Semantic Scholar API rate limited (429)")
                     elif resp.status == 503:
                         text = await resp.text()
                         logger.error(
-                            "Semantic Scholar service unavailable (503) for query=%s: %s",
-                            query,
-                            text,
+                            f"Semantic Scholar service unavailable (503) for query={query}: {text}"
                         )
                         raise RuntimeError("Semantic Scholar service unavailable (503)")
                     else:
                         text = await resp.text()
                         logger.error(
-                            "Semantic Scholar returned status %s for query=%s: %s",
-                            resp.status,
-                            query,
-                            text,
+                            f"Semantic Scholar returned status {resp.status} for query={query}: {text}"
                         )
                         return []
             except asyncio.TimeoutError as te:
                 logger.exception(
-                    "Timeout when calling Semantic Scholar for query=%s", query
+                    f"Timeout when calling Semantic Scholar for query={query}"
                 )
                 raise
             except aiohttp.ClientError as ce:
                 logger.exception(
-                    "Network error when calling Semantic Scholar for query=%s", query
+                    f"Network error when calling Semantic Scholar for query={query}"
                 )
                 raise
         finally:

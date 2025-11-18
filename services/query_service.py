@@ -213,12 +213,7 @@ class QueryService:
             try:
                 # Week 1: No query embedding needed - quality gate uses paper-level metrics only
                 # (citations, recency, venue quality)
-                # Week 2+: Will use local embedding model for semantic similarity
                 query_embedding = None
-                if self.embedding_model is not None:
-                    query_embedding = self.embedding_model.encode(query)
-                    query_embedding = np.array(query_embedding, dtype=np.float32)
-
                 quality_result = validate_quality(papers, query_embedding)
                 timing_breakdown["quality_gate"] = time.perf_counter() - stage_start
                 logger.info(
@@ -242,8 +237,9 @@ class QueryService:
                 )
                 stage_start = time.perf_counter()
                 try:
-                    input_data = {"papers": papers, "query_embedding": query_embedding}
-                    finalists = self._get_ranker().rank_papers(input_data)
+                    finalists = self._get_ranker().rank_papers(
+                        papers, optimized_queries["final_rephrase"]
+                    )
                     timing_breakdown["composite_scoring"] = (
                         time.perf_counter() - stage_start
                     )
