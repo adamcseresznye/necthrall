@@ -39,6 +39,9 @@ class State(BaseModel):
     # Passages (Week 2)
     passages: Optional[List[Dict[str, Any]]] = None
 
+    # Chunks produced by processing agents (LlamaIndex Documents / node objects)
+    chunks: Optional[List[Any]] = None
+
     # Answer and citations (Week 3)
     answer: Optional[str] = None
     citations: Optional[List[Dict[str, Any]]] = None
