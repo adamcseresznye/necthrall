@@ -7,9 +7,11 @@ Exposes a /health endpoint for readiness checks.
 # See: https://github.com/pytorch/pytorch/issues/91966
 import os
 
-os.environ["OMP_NUM_THREADS"] = "1"
-os.environ["MKL_NUM_THREADS"] = "1"
+
+# os.environ["OMP_NUM_THREADS"] = "1"
+# os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 
 try:
     import torch
@@ -79,16 +81,25 @@ class QueryResponse(BaseModel):
 async def startup_event():
     """Validate configuration at startup
 
-    Week 1: No embedding model initialization - SPECTER2 embeddings come from Semantic Scholar API.
     Week 2: Will add local embedding model for passage-level chunking.
     """
     try:
         import config  # Triggers validation
 
-        # Initialize query service (no embedding model needed for Week 1)
+        # Initialize query service (no embedding model needed for Week 1 behavior)
         from services.query_service import QueryService
 
         app.state.query_service = QueryService()
+
+        # Initialize the local embedding model for Week 2+ pipelines
+        try:
+            from config.embedding_config import init_embedding
+
+            await init_embedding(app)
+        except Exception:
+            logger.exception(
+                "Embedding model failed to initialize; continuing without it"
+            )
 
         logger.info("Query service initialized")
         logger.info("Application startup successful")

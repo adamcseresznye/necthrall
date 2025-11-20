@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import time
 from loguru import logger
 
 from llama_index.core.node_parser import SimpleNodeParser
 from llama_index.core.schema import Document
+import numpy as np
+
+from utils.embedding_utils import batched_embed
 
 from models.state import State
 from utils.section_detector import detect_sections
@@ -29,7 +32,12 @@ class ProcessingAgent:
             f"ProcessingAgent initialized: chunk_size={chunk_size}, overlap={chunk_overlap}"
         )
 
-    def process(self, state: State) -> State:
+    def process(
+        self,
+        state: State,
+        embedding_model: Optional[object] = None,
+        batch_size: int = 32,
+    ) -> State:
         """Process `state.passages` and populate `state.chunks`.
 
         Args:
@@ -47,8 +55,17 @@ class ProcessingAgent:
             return state
 
         logger.info(f"Processing {len(state.passages)} passages")
+        # Profile timers
+        chunking_time = 0.0
+        embedding_time = 0.0
+
+        # Debug: starting chunk extraction phase
+        logger.debug("Starting chunk extraction for all passages")
+
         all_chunks: List[Any] = []
         had_nonempty_passage = False
+
+        loop_start = time.perf_counter()
 
         for idx, passage in enumerate(state.passages):
             paper_id = (
@@ -93,6 +110,14 @@ class ProcessingAgent:
 
                 doc = Document(text=sec_text)
                 try:
+                    # Debug: about to run the SimpleNodeParser to chunk section text
+                    logger.debug(
+                        {
+                            "event": "chunking_section_start",
+                            "paper_id": paper_id,
+                            "section": sec_name,
+                        }
+                    )
                     nodes = self.parser.get_nodes_from_documents([doc])
                 except Exception as e:
                     logger.warning(
@@ -136,12 +161,112 @@ class ProcessingAgent:
                 }
             )
 
+        loop_end = time.perf_counter()
+        chunking_time = loop_end - loop_start
+
         if not all_chunks:
             # If there were non-empty passages but no chunks, record a critical error.
             if had_nonempty_passage:
                 msg = "Zero chunks generated from passages"
                 logger.error(msg)
                 state.append_error(msg)
+
+        # If an embedding model was provided, compute embeddings in a single batched pass
+        if embedding_model is not None and all_chunks:
+            # Prepare texts (single-pass extraction) — avoid duplicating large text blobs
+            texts: List[str] = []
+            for node in all_chunks:
+                if hasattr(node, "get_text"):
+                    try:
+                        texts.append(node.get_text())
+                    except Exception:
+                        texts.append("")
+                elif hasattr(node, "text"):
+                    texts.append(getattr(node, "text") or "")
+                else:
+                    texts.append("")
+
+            # Retry logic with exponential backoff
+            max_attempts = 3
+            base_backoff = 0.5
+            embeddings = None
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    emb_start = time.perf_counter()
+                    embeddings = batched_embed(
+                        texts,
+                        embedding_model=embedding_model,
+                        batch_size=int(batch_size),
+                    )
+                    emb_end = time.perf_counter()
+                    embedding_time = emb_end - emb_start
+                    # Successful call — break retry loop
+                    break
+                except Exception as exc:
+                    logger.exception(
+                        {
+                            "event": "embedding_attempt_failed",
+                            "attempt": attempt,
+                            "error": str(exc),
+                        }
+                    )
+                    if attempt < max_attempts:
+                        wait = base_backoff * (2 ** (attempt - 1))
+                        logger.info(
+                            {
+                                "event": "embedding_retry_wait",
+                                "wait_s": wait,
+                                "attempt": attempt + 1,
+                            }
+                        )
+                        time.sleep(wait)
+                        continue
+                    else:
+                        logger.exception(
+                            "Batched embedding failed after %s attempts", max_attempts
+                        )
+                        state.append_error(
+                            f"Batched embedding failed after {max_attempts} attempts; see logs"
+                        )
+
+            # If embeddings were obtained, attach them to nodes
+            if embeddings is not None:
+                missing_embeddings: List[int] = []
+                for idx, (node, emb) in enumerate(zip(all_chunks, embeddings)):
+                    try:
+                        arr = np.asarray(emb, dtype=float)
+                        if arr.shape != (384,):
+                            raise ValueError(
+                                f"Embedding dimension mismatch for chunk {idx}: {arr.shape}"
+                            )
+                        # Attach as serializable list to metadata (keeps node object small)
+                        node.metadata["embedding"] = arr.tolist()
+                    except Exception as e:
+                        logger.exception(
+                            "Failed to attach embedding for chunk %s: %s", idx, e
+                        )
+                        missing_embeddings.append(idx)
+
+                if missing_embeddings:
+                    logger.warning(
+                        {
+                            "event": "missing_embeddings",
+                            "count": len(missing_embeddings),
+                        }
+                    )
+                    state.append_error(
+                        f"{len(missing_embeddings)} chunks missing embeddings"
+                    )
+
+            # Info: embedding phase summary for monitoring
+            logger.info(
+                {
+                    "event": "embedding_complete",
+                    "chunks_embedded": len(all_chunks) if embeddings is not None else 0,
+                    "embedding_time_s": embedding_time,
+                    "chunking_time_s": chunking_time,
+                }
+            )
 
         state.update_fields(chunks=all_chunks)
 

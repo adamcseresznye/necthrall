@@ -50,7 +50,6 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 # Application Settings
 # ============================================================================
 TIMEOUT = int(os.getenv("TIMEOUT", "30"))  # API timeout in seconds
-RAG_EMBEDDING_MODEL = os.getenv("RAG_EMBEDDING_MODEL", "allenai/specter2")
 
 
 def _mask_key(value: str | None) -> str:
