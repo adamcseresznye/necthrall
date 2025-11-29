@@ -5,6 +5,7 @@ from typing import Optional, Tuple
 import time
 from loguru import logger
 import fitz  # PyMuPDF
+import pymupdf4llm
 
 
 class PDFExtractionError(Exception):
@@ -38,27 +39,33 @@ PdfExtractionError = PDFExtractionError
 
 
 def _extract_pages(doc: fitz.Document) -> Tuple[str, int]:
-    """Extract text for all pages in a PyMuPDF `doc`.
+    """Extract text as Markdown for all pages in a PyMuPDF document.
 
-    This helper first attempts to extract the whole-document text via
-    `doc.get_text("text")` which is typically faster than per-page
-    iteration. If that fails or returns empty, it falls back to a
-    page-by-page iteration.
+    Uses PyMuPDF4LLM to extract content as GitHub-compatible Markdown,
+    preserving document structure including:
+    - Headers (detected via font size)
+    - Tables (in machine-readable format)
+    - Multi-column reading order
+    - Section hierarchy
 
     Returns:
-        A tuple of (full_text, page_count).
+        A tuple of (markdown_text, page_count).
     """
     page_count = doc.page_count
 
     try:
-        # Fast-path: whole-document text extraction
-        full_text = doc.get_text("text")
-        if full_text and full_text.strip():
-            return full_text.strip(), page_count
-    except Exception:
-        # Fall back to per-page extraction below
+        # PyMuPDF4LLM's to_markdown works on the doc object directly
+        markdown_text = pymupdf4llm.to_markdown(doc)
+        if markdown_text and markdown_text.strip():
+            return markdown_text.strip(), page_count
+    except Exception as e:
+        # If PyMuPDF4LLM fails, fall back to plain text extraction
+        logger.warning(
+            f"PyMuPDF4LLM extraction failed, falling back to plain text: {e}"
+        )
         pass
 
+    # Fallback: per-page plain text extraction
     texts = []
     for i in range(page_count):
         page = doc.load_page(i)

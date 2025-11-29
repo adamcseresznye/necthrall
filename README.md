@@ -90,8 +90,24 @@ python -m necthrall_lite
 - Strictly API-based resolution (no scraping)
 
 3) Parse & Chunk  
-- Extract text (abstract/conclusions prioritized)  
-- Chunk paragraphs/sections (configurable size/overlap)
+
+   Parse & Chunk
+
+   Extract text from PDFs using PyMuPDF4LLM (Markdown-preserving extraction)
+
+   LlamaIndex MarkdownNodeParser automatically detects document structure:
+
+     Headers (##, ###, ####) from font size analysis
+
+     Section boundaries and hierarchy
+
+     Table preservation
+
+     Multi-column reading order
+
+   Configurable chunk size/overlap (default 800/120 chars)
+
+   Chunks respect Markdown boundaries for coherent context
 
 4) Embed & Index  
 - Encode chunks with sentence-transformers  
@@ -120,6 +136,8 @@ python -m necthrall_lite
 ## Architecture
 
 - Single Python app: NiceGUI (UI) + FastAPI (API)  
+- Pure LlamaIndex pipeline (no LangChain dependencies)
+- Markdown-aware PDF extraction and chunking
 - On-demand OA retrieval (OpenAlex, Unpaywall, PMC, arXiv)  
 - Per-query vector index (FAISS)  
 - BYO LLM for contradiction checks and synthesis  
@@ -286,6 +304,7 @@ Notes:
 
 - **On-demand OA retrieval**: avoids storage/ops complexity  
 - **Ephemeral vector index**: per-query isolation and simplicity  
+- **LlamaIndex-native Markdown parsing**: PyMuPDF4LLM + MarkdownNodeParser preserves document structure without custom regex or external dependencies (pure LlamaIndex stack)
 - **Credibility heuristics**: simple, transparent, adjustable weights  
 - **Minimal LLM usage**: contradiction verification + final synthesis  
 - **Inline citations with spans**: traceability by design

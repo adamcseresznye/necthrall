@@ -5,6 +5,7 @@ to the DLL search path using `os.add_dll_directory` on Windows. It runs at
 collection time, so it executes before other test modules import packages
 that may trigger `torch`/`transformers` imports and avoids DLL init errors.
 """
+
 import os
 import sys
 import types
@@ -21,7 +22,13 @@ if "transformers" not in sys.modules:
             # Return a callable tokenizer that mirrors the subset of the
             # interface used by `ONNXEmbeddingModel`: __call__ returning
             # `input_ids` and `attention_mask` numpy arrays.
-            def tokenizer(texts, padding=True, truncation=True, max_length=512, return_tensors="np"):
+            def tokenizer(
+                texts,
+                padding=True,
+                truncation=True,
+                max_length=512,
+                return_tensors="np",
+            ):
                 import numpy as _np
 
                 n = len(texts)

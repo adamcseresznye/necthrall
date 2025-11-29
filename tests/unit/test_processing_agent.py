@@ -87,11 +87,11 @@ def test_empty_passage_is_skipped(make_state):
 
 
 @pytest.mark.unit
-def test_fallback_section_detection(make_state):
-    # No explicit headers -> triggers fallback chunking
+def test_markdown_parser_handles_plain_text(make_state):
+    # No explicit Markdown headers -> MarkdownNodeParser chunks by size
     long_text = "This is a paper without headers. " + ("word " * 3000)
     state = make_state(
-        "fallback", [{"paperId": "f1", "text": long_text, "text_source": "pdf"}]
+        "plaintext", [{"paperId": "f1", "text": long_text, "text_source": "pdf"}]
     )
     agent = ProcessingAgent(chunk_size=400, chunk_overlap=50)
     updated = agent.process(state)

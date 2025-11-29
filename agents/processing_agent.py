@@ -4,14 +4,13 @@ from typing import List, Dict, Any, Optional
 import time
 from loguru import logger
 
-from llama_index.core.node_parser import SimpleNodeParser
+from llama_index.core.node_parser import MarkdownNodeParser, SentenceSplitter
 from llama_index.core.schema import Document
 import numpy as np
 
 from utils.embedding_utils import batched_embed
 
 from models.state import State
-from utils.section_detector import detect_sections
 
 
 class ProcessingAgent:
@@ -25,7 +24,9 @@ class ProcessingAgent:
     def __init__(self, chunk_size: int = 500, chunk_overlap: int = 50):
         self.chunk_size = int(chunk_size)
         self.chunk_overlap = int(chunk_overlap)
-        self.parser = SimpleNodeParser.from_defaults(
+        # Two-stage parsing: first split by markdown headers, then by size
+        self.markdown_parser = MarkdownNodeParser.from_defaults()
+        self.size_splitter = SentenceSplitter(
             chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap
         )
         logger.debug(
@@ -89,75 +90,63 @@ class ProcessingAgent:
 
             logger.info({"event": "processing_paper_start", "paper_id": paper_id})
 
+            # Create single document from passage text
+            # MarkdownNodeParser will automatically split by headers
+            doc = Document(text=text)
+
             try:
-                sections = detect_sections(text, paper_id=paper_id)
+                logger.debug(
+                    {
+                        "event": "markdown_parsing_start",
+                        "paper_id": paper_id,
+                        "text_length": len(text),
+                    }
+                )
+                # Stage 1: Split by markdown headers
+                markdown_nodes = self.markdown_parser.get_nodes_from_documents([doc])
+                # Stage 2: Further split by chunk size if sections are too large
+                nodes = []
+                for md_node in markdown_nodes:
+                    sub_nodes = self.size_splitter.get_nodes_from_documents([md_node])
+                    nodes.extend(sub_nodes)
             except Exception as e:
                 logger.warning(
                     {
-                        "event": "section_detection_failed",
+                        "event": "markdown_parsing_failed",
                         "paper_id": paper_id,
                         "error": str(e),
                     }
                 )
-                sections = [{"name": "full_text", "text": text}]
+                nodes = []
 
             paper_chunk_count = 0
-            for sec in sections:
-                sec_name = sec.get("name", "full_text")
-                sec_text = sec.get("text", "") or ""
-                if not sec_text.strip():
-                    continue
 
-                doc = Document(text=sec_text)
-                try:
-                    # Debug: about to run the SimpleNodeParser to chunk section text
-                    logger.debug(
-                        {
-                            "event": "chunking_section_start",
-                            "paper_id": paper_id,
-                            "section": sec_name,
-                        }
-                    )
-                    nodes = self.parser.get_nodes_from_documents([doc])
-                except Exception as e:
-                    logger.warning(
-                        {
-                            "event": "chunking_failed",
-                            "paper_id": paper_id,
-                            "section": sec_name,
-                            "error": str(e),
-                        }
-                    )
-                    nodes = []
+            for chunk_idx, node in enumerate(nodes):
+                # Attach metadata directly; fail-fast if this raises
+                node.metadata.update(
+                    {
+                        "paper_id": paper_id,
+                        "chunk_index": chunk_idx,
+                        "paper_title": title,
+                        "citation_count": citation_count,
+                    }
+                )
+                # Add optional fields if present
+                if year is not None:
+                    node.metadata["year"] = year
+                if venue is not None:
+                    node.metadata["venue"] = venue
+                if influential is not None:
+                    node.metadata["influential_citation_count"] = influential
 
-                for chunk_idx, node in enumerate(nodes):
-                    # Attach metadata directly; fail-fast if this raises
-                    node.metadata.update(
-                        {
-                            "paper_id": paper_id,
-                            "section_name": sec_name,
-                            "chunk_index": chunk_idx,
-                            "paper_title": title,
-                            "citation_count": citation_count,
-                        }
-                    )
-                    # Add optional fields if present
-                    if year is not None:
-                        node.metadata["year"] = year
-                    if venue is not None:
-                        node.metadata["venue"] = venue
-                    if influential is not None:
-                        node.metadata["influential_citation_count"] = influential
-
-                    all_chunks.append(node)
-                    paper_chunk_count += 1
+                all_chunks.append(node)
+                paper_chunk_count += 1
 
             logger.debug(
                 {
                     "event": "processing_paper_done",
                     "paper_id": paper_id,
                     "chunks": paper_chunk_count,
-                    "sections": len(sections),
                 }
             )
 
