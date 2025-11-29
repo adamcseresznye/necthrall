@@ -1,3 +1,11 @@
+"""Performance tests for ONNX embedding model.
+
+These tests measure embedding performance and are marked as 'performance'
+to be skipped by default. Run with: pytest -m performance
+
+Run with: pytest -m performance tests/performance/test_embedding_performance.py
+"""
+
 import os
 import random
 import string
@@ -6,9 +14,9 @@ from statistics import mean
 
 import pytest
 from loguru import logger
-from config.embedding_config import MODEL_NAME
-from config.onnx_embedding import ONNXEmbeddingModel
-from utils.embedding_utils import batched_embed
+
+# Lazy import to avoid loading ONNX model at collection time
+MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
 # Note: Using psutil for memory measurement instead of memory_profiler
 # to avoid Windows multiprocessing issues
@@ -62,6 +70,9 @@ def embedding_model():
     Uses ONNX Runtime for 30-60x faster inference vs PyTorch.
     Reuses the same model instance across all tests to avoid repeated loading overhead.
     """
+    # Lazy import to avoid DLL conflicts
+    from config.onnx_embedding import ONNXEmbeddingModel
+
     logger.info("Loading ONNX embedding model: {}", MODEL_NAME)
     model = ONNXEmbeddingModel(MODEL_NAME)
     logger.info("ONNX model loaded successfully (expected 30-60x faster than PyTorch)")
@@ -73,6 +84,9 @@ def _measure_embedding_time_and_memory(chunks_list, batch_size, embedding_model)
 
     Returns dict with: total_time, peak_memory_mb, mem_delta_mb
     """
+    # Lazy import to avoid DLL conflicts
+    from utils.embedding_utils import batched_embed
+
     import psutil
     import os
 
@@ -203,6 +217,8 @@ def test_scaling_behavior(embedding_model):
 
     Uses 1k, 5k, 10k, 20k chunk counts and measures total time.
     """
+    from utils.embedding_utils import batched_embed
+
     counts = [1_000, 5_000, 10_000, 20_000]
     batch_size = 32
     results = {}

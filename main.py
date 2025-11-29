@@ -3,20 +3,10 @@
 Exposes a /health endpoint for readiness checks.
 """
 
-# CRITICAL: Import torch FIRST to avoid DLL initialization errors on Windows
-# See: https://github.com/pytorch/pytorch/issues/91966
 import os
 
-
-# os.environ["OMP_NUM_THREADS"] = "1"
-# os.environ["MKL_NUM_THREADS"] = "1"
+# Disable tokenizers parallelism to avoid warnings
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
-
-try:
-    import torch
-except ImportError:
-    pass  # torch may not be installed yet
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
