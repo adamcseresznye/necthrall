@@ -1,14 +1,26 @@
-"""Query service for orchestrating the Week 1 pipeline.
+"""Query service for orchestrating the Week 1 + Week 2 pipeline.
 
 Handles the complete query processing pipeline with comprehensive error handling,
 detailed timing instrumentation, and structured logging.
+
+Week 1 Stages (1-4):
+    1. Query Optimization
+    2. Semantic Scholar Search
+    3. Quality Gate
+    4. Composite Scoring
+
+Week 2 Stages (5-8):
+    5. PDF Acquisition
+    6. Processing & Embedding
+    7. Hybrid Retrieval
+    8. Cross-Encoder Reranking
 """
 
 from __future__ import annotations
 
 import time
-from typing import Dict, List, Any, Optional
-from dataclasses import dataclass
+from typing import Dict, List, Any, Optional, TYPE_CHECKING
+from dataclasses import dataclass, field
 from loguru import logger
 import numpy as np
 
@@ -18,10 +30,32 @@ from agents.quality_gate import validate_quality
 from agents.ranking_agent import RankingAgent
 import config
 
+# Week 2 imports - use lazy loading to avoid DLL conflicts on Windows
+# These are imported inside methods to prevent torch DLL issues
+if TYPE_CHECKING:
+    from agents.acquisition_agent import AcquisitionAgent
+    from agents.processing_agent import ProcessingAgent
+    from retrieval.llamaindex_retriever import LlamaIndexRetriever
+    from retrieval.reranker import CrossEncoderReranker
+    from models.state import State
+
 
 @dataclass
 class PipelineResult:
-    """Result of pipeline execution."""
+    """Result of pipeline execution.
+
+    Attributes:
+        query: Original user query.
+        optimized_queries: Dict with primary, broad, alternative, and final_rephrase.
+        quality_gate: Quality gate validation results.
+        finalists: Top ranked papers after composite scoring.
+        execution_time: Total pipeline execution time in seconds.
+        timing_breakdown: Per-stage timing in seconds.
+        success: Whether pipeline completed successfully.
+        error_message: Error message if pipeline failed.
+        error_stage: Stage where error occurred.
+        passages: Top ranked passages after reranking (Week 2).
+    """
 
     query: str
     optimized_queries: Dict[str, str]
@@ -32,6 +66,7 @@ class PipelineResult:
     success: bool
     error_message: Optional[str] = None
     error_stage: Optional[str] = None
+    passages: List[Any] = field(default_factory=list)
 
 
 class QueryServiceError(Exception):
@@ -72,18 +107,48 @@ class RankingError(QueryServiceError):
         super().__init__(message, "composite_scoring", 500)
 
 
-class QueryService:
-    """Service for orchestrating the Week 1 query pipeline.
+class AcquisitionError(QueryServiceError):
+    """Error during PDF acquisition."""
 
-    Handles query optimization, paper retrieval, quality validation, and ranking
-    with comprehensive error handling and performance monitoring.
+    def __init__(self, message: str):
+        super().__init__(message, "pdf_acquisition", 500)
+
+
+class ProcessingError(QueryServiceError):
+    """Error during processing and embedding."""
+
+    def __init__(self, message: str):
+        super().__init__(message, "processing", 500)
+
+
+class RetrievalError(QueryServiceError):
+    """Error during hybrid retrieval."""
+
+    def __init__(self, message: str):
+        super().__init__(message, "retrieval", 500)
+
+
+class RerankingError(QueryServiceError):
+    """Error during cross-encoder reranking."""
+
+    def __init__(self, message: str):
+        super().__init__(message, "reranking", 500)
+
+
+class QueryService:
+    """Service for orchestrating the Week 1 + Week 2 query pipeline.
+
+    Week 1: Query optimization, paper retrieval, quality validation, and ranking.
+    Week 2: PDF acquisition, processing/embedding, hybrid retrieval, and reranking.
+
+    Provides comprehensive error handling and performance monitoring.
     """
 
     def __init__(self, embedding_model: Any = None):
         """Initialize the query service.
 
         Args:
-            embedding_model: Pre-loaded SentenceTransformer model for query embedding.
+            embedding_model: Pre-loaded embedding model for query/passage embedding.
                            Optional for Week 1 (uses Semantic Scholar API embeddings).
                            Required for Week 2+ (local passage embeddings).
         """
@@ -91,6 +156,10 @@ class QueryService:
         self._optimizer = None
         self._client = None
         self._ranker = None
+        self._acquisition_agent = None
+        self._processing_agent = None
+        self._retriever = None
+        self._reranker = None
 
     def _get_optimizer(self) -> QueryOptimizationAgent:
         """Lazy initialization of query optimizer."""
@@ -112,8 +181,61 @@ class QueryService:
             self._ranker = RankingAgent()
         return self._ranker
 
+    def _get_acquisition_agent(self) -> "AcquisitionAgent":
+        """Lazy initialization of PDF acquisition agent."""
+        if self._acquisition_agent is None:
+            from agents.acquisition_agent import AcquisitionAgent
+
+            self._acquisition_agent = AcquisitionAgent()
+        return self._acquisition_agent
+
+    def _get_processing_agent(self) -> "ProcessingAgent":
+        """Lazy initialization of processing agent."""
+        if self._processing_agent is None:
+            from agents.processing_agent import ProcessingAgent
+
+            self._processing_agent = ProcessingAgent(
+                chunk_size=500,
+                chunk_overlap=50,
+            )
+        return self._processing_agent
+
+    def _get_retriever(self) -> Optional["LlamaIndexRetriever"]:
+        """Lazy initialization of hybrid retriever.
+
+        Returns None if embedding_model is not available.
+        """
+        if self._retriever is None and self.embedding_model is not None:
+            from retrieval.llamaindex_retriever import LlamaIndexRetriever
+
+            self._retriever = LlamaIndexRetriever(
+                embedding_model=self.embedding_model,
+                top_k=15,  # Before reranking
+            )
+        return self._retriever
+
+    def _get_reranker(self) -> "CrossEncoderReranker":
+        """Lazy initialization of cross-encoder reranker."""
+        if self._reranker is None:
+            from retrieval.reranker import CrossEncoderReranker
+
+            self._reranker = CrossEncoderReranker()
+        return self._reranker
+
     async def process_query(self, query: str) -> PipelineResult:
-        """Process a user query through the complete Week 1 pipeline.
+        """Process a user query through the complete Week 1 + Week 2 pipeline.
+
+        Week 1 Stages:
+            1. Query Optimization - Generate optimized query variants
+            2. Semantic Scholar Search - Retrieve papers from API
+            3. Quality Gate - Validate paper quality
+            4. Composite Scoring - Rank papers by relevance
+
+        Week 2 Stages:
+            5. PDF Acquisition - Download PDFs for top papers
+            6. Processing & Embedding - Chunk and embed text
+            7. Hybrid Retrieval - Vector + BM25 search with RRF fusion
+            8. Cross-Encoder Reranking - Final passage ranking
 
         Args:
             query: The user query string
@@ -134,6 +256,7 @@ class QueryService:
             execution_time=0.0,
             timing_breakdown={},
             success=False,
+            passages=[],
         )
 
         try:
@@ -257,7 +380,214 @@ class QueryService:
                 timing_breakdown["composite_scoring"] = 0.0
                 logger.info("Quality gate failed - skipping ranking stage")
 
-            # Success
+            # =====================================================================
+            # Week 2 Stages (5-8): PDF Acquisition, Processing, Retrieval, Reranking
+            # =====================================================================
+
+            # Check if we have finalists to process
+            if not finalists:
+                logger.info("ℹ️ No finalists to process - returning Week 1 results only")
+                execution_time = time.perf_counter() - start_time
+                result = PipelineResult(
+                    query=query,
+                    optimized_queries=optimized_queries,
+                    quality_gate=quality_result,
+                    finalists=finalists,
+                    execution_time=execution_time,
+                    timing_breakdown=timing_breakdown,
+                    success=True,
+                    passages=[],
+                )
+                return result
+
+            # Check if embedding model is available for Week 2 stages
+            if self.embedding_model is None:
+                logger.warning(
+                    "⚠️ Embedding model not available - skipping Week 2 stages (5-8). "
+                    "Week 1 pipeline results only."
+                )
+                execution_time = time.perf_counter() - start_time
+                result = PipelineResult(
+                    query=query,
+                    optimized_queries=optimized_queries,
+                    quality_gate=quality_result,
+                    finalists=finalists,
+                    execution_time=execution_time,
+                    timing_breakdown=timing_breakdown,
+                    success=True,
+                    passages=[],
+                )
+                return result
+
+            # Stage 5: PDF Acquisition
+            logger.info(
+                "🧮 Stage 5: PDF Acquisition - downloading PDFs for {} finalists",
+                len(finalists),
+            )
+            stage_start = time.perf_counter()
+            passages = []
+            state = None
+            try:
+                from models.state import State
+
+                state = State(query=query, finalists=finalists)
+                acquisition_agent = self._get_acquisition_agent()
+                state = await acquisition_agent.process(state)
+                passages = state.passages or []
+                timing_breakdown["pdf_acquisition"] = time.perf_counter() - stage_start
+                logger.info(
+                    "✅ PDF acquisition completed in {:.3f}s - acquired {} PDFs",
+                    timing_breakdown["pdf_acquisition"],
+                    len(passages),
+                )
+            except Exception as e:
+                timing_breakdown["pdf_acquisition"] = time.perf_counter() - stage_start
+                logger.warning(
+                    "⚠️ PDF acquisition failed: {}. Continuing with partial results.",
+                    str(e),
+                )
+
+            # Check if we have passages to process
+            if not passages:
+                logger.warning("⚠️ No PDFs acquired - returning Week 1 results only")
+                execution_time = time.perf_counter() - start_time
+                result = PipelineResult(
+                    query=query,
+                    optimized_queries=optimized_queries,
+                    quality_gate=quality_result,
+                    finalists=finalists,
+                    execution_time=execution_time,
+                    timing_breakdown=timing_breakdown,
+                    success=True,
+                    passages=[],
+                )
+                return result
+
+            # Stage 6: Processing & Embedding
+            logger.info(
+                "📄 Stage 6: Processing & Embedding - chunking {} passages",
+                len(passages),
+            )
+            stage_start = time.perf_counter()
+            chunks = []
+            try:
+                processing_agent = self._get_processing_agent()
+                state = processing_agent.process(
+                    state,
+                    embedding_model=self.embedding_model,
+                    batch_size=32,
+                )
+                chunks = state.chunks or []
+                timing_breakdown["processing"] = time.perf_counter() - stage_start
+                logger.info(
+                    "✅ Processing completed in {:.3f}s - generated {} chunks",
+                    timing_breakdown["processing"],
+                    len(chunks),
+                )
+            except Exception as e:
+                timing_breakdown["processing"] = time.perf_counter() - stage_start
+                logger.warning(
+                    "⚠️ Processing failed: {}. Continuing with partial results.",
+                    str(e),
+                )
+
+            # Check if we have chunks to retrieve from
+            if not chunks:
+                logger.warning("⚠️ No chunks generated - returning Week 1 results only")
+                execution_time = time.perf_counter() - start_time
+                result = PipelineResult(
+                    query=query,
+                    optimized_queries=optimized_queries,
+                    quality_gate=quality_result,
+                    finalists=finalists,
+                    execution_time=execution_time,
+                    timing_breakdown=timing_breakdown,
+                    success=True,
+                    passages=[],
+                )
+                return result
+
+            # Stage 7: Hybrid Retrieval
+            logger.info(
+                "🔍 Stage 7: Hybrid Retrieval - searching {} chunks",
+                len(chunks),
+            )
+            stage_start = time.perf_counter()
+            retrieval_results = []
+            try:
+                retriever = self._get_retriever()
+                if retriever is None:
+                    raise RetrievalError(
+                        "Retriever not available (embedding model missing)"
+                    )
+
+                # Use final_rephrase for retrieval query
+                retrieval_query = optimized_queries.get("final_rephrase", query)
+                retrieval_results = retriever.retrieve(
+                    query=retrieval_query,
+                    chunks=chunks,
+                )
+                timing_breakdown["retrieval"] = time.perf_counter() - stage_start
+                logger.info(
+                    "✅ Hybrid retrieval completed in {:.3f}s - found {} passages",
+                    timing_breakdown["retrieval"],
+                    len(retrieval_results),
+                )
+            except Exception as e:
+                timing_breakdown["retrieval"] = time.perf_counter() - stage_start
+                logger.warning(
+                    "⚠️ Retrieval failed: {}. Continuing with partial results.",
+                    str(e),
+                )
+
+            # Check if we have retrieval results to rerank
+            if not retrieval_results:
+                logger.warning("⚠️ No retrieval results - returning Week 1 results only")
+                execution_time = time.perf_counter() - start_time
+                result = PipelineResult(
+                    query=query,
+                    optimized_queries=optimized_queries,
+                    quality_gate=quality_result,
+                    finalists=finalists,
+                    execution_time=execution_time,
+                    timing_breakdown=timing_breakdown,
+                    success=True,
+                    passages=[],
+                )
+                return result
+
+            # Stage 8: Cross-Encoder Reranking
+            logger.info(
+                "🎯 Stage 8: Cross-Encoder Reranking - reranking {} passages",
+                len(retrieval_results),
+            )
+            stage_start = time.perf_counter()
+            final_passages = []
+            try:
+                reranker = self._get_reranker()
+                # Use final_rephrase for reranking query
+                rerank_query = optimized_queries.get("final_rephrase", query)
+                final_passages = reranker.rerank(
+                    query=rerank_query,
+                    nodes=retrieval_results,
+                    top_k=12,
+                )
+                timing_breakdown["reranking"] = time.perf_counter() - stage_start
+                logger.info(
+                    "✅ Reranking completed in {:.3f}s - selected {} final passages",
+                    timing_breakdown["reranking"],
+                    len(final_passages),
+                )
+            except Exception as e:
+                timing_breakdown["reranking"] = time.perf_counter() - stage_start
+                logger.warning(
+                    "⚠️ Reranking failed: {}. Returning retrieval results as-is.",
+                    str(e),
+                )
+                # Fallback: use retrieval results without reranking
+                final_passages = retrieval_results[:12]
+
+            # Success - Full Week 1 + Week 2 pipeline
             execution_time = time.perf_counter() - start_time
             result = PipelineResult(
                 query=query,
@@ -267,10 +597,16 @@ class QueryService:
                 execution_time=execution_time,
                 timing_breakdown=timing_breakdown,
                 success=True,
+                passages=final_passages,
             )
 
             logger.info(
-                f"Query pipeline completed successfully in {execution_time:.3f}s - quality_gate: {quality_result['passed']}, finalists: {len(finalists)}"
+                "✅ Full pipeline completed in {:.3f}s - "
+                "quality_gate: {}, finalists: {}, passages: {}",
+                execution_time,
+                quality_result["passed"],
+                len(finalists),
+                len(final_passages),
             )
             return result
 
@@ -281,7 +617,7 @@ class QueryService:
             # Catch any unexpected errors
             execution_time = time.perf_counter() - start_time
             logger.exception(
-                "Unexpected error in query pipeline for query: {}", query[:100]
+                "❌ Unexpected error in query pipeline for query: {}", query[:100]
             )
             raise QueryServiceError(
                 f"An unexpected error occurred: {str(e)}", "unknown", 500
