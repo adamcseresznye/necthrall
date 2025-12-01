@@ -633,10 +633,35 @@ class QueryService:
 
                 # Use final_rephrase for retrieval query
                 retrieval_query = optimized_queries.get("final_rephrase", query)
-                retrieval_results = retriever.retrieve(
-                    query=retrieval_query,
-                    chunks=chunks,
-                )
+
+                # Extract pre-computed embeddings from chunks (computed in Stage 6)
+                chunk_embeddings = [
+                    chunk.metadata["embedding"]
+                    for chunk in chunks
+                    if "embedding" in chunk.metadata
+                ]
+
+                # Use pre-computed embeddings path if all embeddings are available
+                if len(chunk_embeddings) == len(chunks):
+                    logger.info(
+                        "🚀 Using pre-computed embeddings for retrieval ({} chunks)",
+                        len(chunks),
+                    )
+                    retrieval_results = retriever.retrieve_with_embeddings(
+                        query=retrieval_query,
+                        chunks=chunks,
+                        chunk_embeddings=chunk_embeddings,
+                    )
+                else:
+                    logger.warning(
+                        "⚠️ Missing embeddings in {} chunks, falling back to re-calculation",
+                        len(chunks) - len(chunk_embeddings),
+                    )
+                    retrieval_results = retriever.retrieve(
+                        query=retrieval_query,
+                        chunks=chunks,
+                    )
+
                 timing_breakdown["retrieval"] = time.perf_counter() - stage_start
                 logger.info(
                     "✅ Hybrid retrieval completed in {:.3f}s - found {} passages",
