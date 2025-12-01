@@ -44,7 +44,7 @@ class State(BaseModel):
 
     # Answer and citations (Week 3)
     answer: Optional[str] = None
-    citations: Optional[List[Dict[str, Any]]] = None
+    citations: List[int] = Field(default_factory=list)
 
     # Error tracking
     errors: List[str] = Field(default_factory=list)

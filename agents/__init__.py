@@ -3,4 +3,4 @@
 This module exposes agent classes as they are implemented.
 """
 
-__all__ = ["SemanticScholarClient", "QueryOptimizationAgent"]
+__all__ = ["SemanticScholarClient", "QueryOptimizationAgent", "SynthesisAgent"]

@@ -54,3 +54,32 @@ def test_error_tracking_and_defaults():
     # defaults regenerated per instance
     s2 = State(query="err2")
     assert s2.request_id != s.request_id
+
+
+@pytest.mark.unit
+def test_synthesis_fields_defaults():
+    """Test that answer and citations fields default correctly."""
+    s = State(query="synthesis test")
+    # answer defaults to None
+    assert s.answer is None
+    # citations defaults to empty list
+    assert s.citations == []
+    assert isinstance(s.citations, list)
+
+
+@pytest.mark.unit
+def test_synthesis_fields_assignment():
+    """Test that answer and citations can be assigned and updated."""
+    s = State(query="synthesis test")
+
+    # Set answer
+    s.update_fields(answer="The evidence suggests...")
+    assert s.answer == "The evidence suggests..."
+
+    # Set citations as list of integers (paper indices)
+    s.update_fields(citations=[0, 2, 5])
+    assert s.citations == [0, 2, 5]
+
+    # Verify other existing fields remain intact
+    assert s.finalists is None
+    assert s.passages is None
