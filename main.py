@@ -44,6 +44,8 @@ from services.query_service import (
     ProcessingError,
     RetrievalError,
     RerankingError,
+    SynthesisError,
+    VerificationError,
 )
 
 # Configure loguru with immediate flush for Windows compatibility
@@ -72,23 +74,75 @@ app.add_middleware(
 
 # Pydantic models
 class QueryRequest(BaseModel):
-    """Request model for /query endpoint."""
+    """Request model for /query endpoint.
+
+    Attributes:
+        query: The user's scientific research question.
+    """
 
     query: str = Field(
-        ..., min_length=1, max_length=500, description="User query string"
+        ...,
+        min_length=1,
+        max_length=500,
+        description="User query string",
+        json_schema_extra={
+            "example": "What are the cardiovascular effects of intermittent fasting?"
+        },
+    )
+
+
+class CitationItem(BaseModel):
+    """A single citation with text content and metadata for frontend display.
+
+    Attributes:
+        id: 1-based citation index corresponding to [N] in the answer.
+        text: The passage text content.
+        metadata: Additional metadata (paper_id, paper_title, section, score, etc.).
+    """
+
+    id: int = Field(
+        ..., description="1-based citation index corresponding to [N] in the answer"
+    )
+    text: str = Field(..., description="The passage text content")
+    metadata: dict = Field(
+        default_factory=dict,
+        description="Additional metadata (paper_id, paper_title, section, score)",
     )
 
 
 class QueryResponse(BaseModel):
-    """Response model for /query endpoint."""
+    """Response model for /query endpoint.
 
-    query: str
-    optimized_queries: dict
-    quality_gate: dict
-    finalists: list = Field(default_factory=list)
-    execution_time: float
-    timing_breakdown: dict
-    passages: list = Field(default_factory=list)
+    This is the CRITICAL schema for the Frontend (Week 4).
+
+    Attributes:
+        answer: The synthesized answer text with inline [N] citations.
+        citations: List of citation items for frontend modal display.
+        finalists: List of papers found during search.
+        execution_time: Total pipeline execution time in seconds.
+        timing_breakdown: Per-stage timing in seconds.
+    """
+
+    answer: str = Field(
+        ...,
+        description="The synthesized answer text with inline [N] citations",
+    )
+    citations: list[CitationItem] = Field(
+        default_factory=list,
+        description="List of citations with id, text, and metadata for frontend modal",
+    )
+    finalists: list = Field(
+        default_factory=list,
+        description="List of papers found during search",
+    )
+    execution_time: float = Field(
+        ...,
+        description="Total pipeline execution time in seconds",
+    )
+    timing_breakdown: dict = Field(
+        default_factory=dict,
+        description="Per-stage timing breakdown in seconds",
+    )
 
 
 @app.on_event("startup")
@@ -182,49 +236,102 @@ async def health_check():
 
 @app.post("/query", response_model=QueryResponse)
 async def query_endpoint(request: QueryRequest):
-    """Execute the full Week 1 + Week 2 pipeline.
+    """Execute the full 10-stage pipeline and return a synthesized answer with citations.
 
-    Week 1: query_optimization → semantic_scholar_search → quality_gate → composite_scoring
-    Week 2: pdf_acquisition → processing → hybrid_retrieval → cross_encoder_reranking
+    **Pipeline Stages:**
+    - Week 1 (1-4): query_optimization → semantic_scholar_search → quality_gate → composite_scoring
+    - Week 2 (5-8): pdf_acquisition → processing → hybrid_retrieval → cross_encoder_reranking
+    - Week 3 (9-10): synthesis → citation_verification
 
-    Accepts a user query and returns top 5-10 ranked papers with passages, execution timing, and quality metrics.
+    **Returns:**
+    - `answer`: Synthesized text with inline [N] citations
+    - `citations`: List of passage objects with id, text, and metadata for frontend modals
+    - `finalists`: Papers found during search
+    - `execution_time`: Total processing time in seconds
+    - `timing_breakdown`: Per-stage timing breakdown
+
+    **Example Response:**
+    ```json
+    {
+        "answer": "Intermittent fasting reduces blood pressure [1] and improves cardiac function [2].",
+        "citations": [
+            {"id": 1, "text": "Blood pressure decreased by 8.5 mmHg...", "metadata": {...}},
+            {"id": 2, "text": "Cardiac function improved significantly...", "metadata": {...}}
+        ],
+        "finalists": [...],
+        "execution_time": 12.5,
+        "timing_breakdown": {"query_optimization": 0.5, ...}
+    }
+    ```
     """
     try:
+        logger.info(f"Processing query: {request.query[:100]}...")
+
         # Use the query service to process the request
         result = await app.state.query_service.process_query(request.query)
 
-        # Convert NodeWithScore objects to serializable dicts for passages
-        serialized_passages = []
-        for passage in result.passages:
+        # Check if pipeline succeeded
+        if not result.success:
+            logger.error(
+                f"Pipeline failed at stage '{result.error_stage}': {result.error_message}"
+            )
+            raise HTTPException(
+                status_code=500,
+                detail=f"Pipeline failed at stage '{result.error_stage}': {result.error_message}",
+            )
+
+        # Transform passages to citations with id, text, and metadata
+        citations = []
+        for idx, passage in enumerate(result.passages):
             try:
-                passage_dict = {
-                    "content": (
-                        passage.node.get_content()
-                        if hasattr(passage.node, "get_content")
-                        else str(passage.node)
-                    ),
-                    "score": passage.score,
-                    "metadata": (
-                        passage.node.metadata
-                        if hasattr(passage.node, "metadata")
-                        else {}
-                    ),
-                }
-                serialized_passages.append(passage_dict)
+                # Extract text content
+                text = (
+                    passage.node.get_content()
+                    if hasattr(passage.node, "get_content")
+                    else str(passage.node)
+                )
+
+                # Extract metadata
+                metadata = (
+                    passage.node.metadata.copy()
+                    if hasattr(passage.node, "metadata") and passage.node.metadata
+                    else {}
+                )
+
+                # Add score to metadata for frontend use
+                metadata["score"] = passage.score
+
+                citation_item = CitationItem(
+                    id=idx + 1,  # 1-based index to match [N] citations
+                    text=text,
+                    metadata=metadata,
+                )
+                citations.append(citation_item)
             except Exception as e:
-                logger.warning(f"Failed to serialize passage: {e}")
+                logger.warning(f"Failed to serialize passage {idx}: {e}")
                 continue
 
+        # Get the answer (fallback to empty string if None)
+        answer = (
+            result.answer or "No answer could be generated from the available sources."
+        )
+
+        logger.info(
+            f"Query processed successfully: {len(citations)} citations, "
+            f"{len(result.finalists)} finalists, {result.execution_time:.2f}s"
+        )
+
         return QueryResponse(
-            query=result.query,
-            optimized_queries=result.optimized_queries,
-            quality_gate=result.quality_gate,
+            answer=answer,
+            citations=citations,
             finalists=result.finalists,
             execution_time=result.execution_time,
             timing_breakdown=result.timing_breakdown,
-            passages=serialized_passages,
         )
 
+    except HTTPException:
+        # Re-raise HTTPExceptions as-is
+        raise
     except QueryOptimizationError as e:
         logger.exception("Query optimization error for query: {}", request.query[:100])
         raise HTTPException(status_code=e.http_status, detail=e.message)
@@ -236,6 +343,24 @@ async def query_endpoint(request: QueryRequest):
         raise HTTPException(status_code=e.http_status, detail=e.message)
     except RankingError as e:
         logger.exception("Ranking error for query: {}", request.query[:100])
+        raise HTTPException(status_code=e.http_status, detail=e.message)
+    except AcquisitionError as e:
+        logger.exception("PDF acquisition error for query: {}", request.query[:100])
+        raise HTTPException(status_code=e.http_status, detail=e.message)
+    except ProcessingError as e:
+        logger.exception("Processing error for query: {}", request.query[:100])
+        raise HTTPException(status_code=e.http_status, detail=e.message)
+    except RetrievalError as e:
+        logger.exception("Retrieval error for query: {}", request.query[:100])
+        raise HTTPException(status_code=e.http_status, detail=e.message)
+    except RerankingError as e:
+        logger.exception("Reranking error for query: {}", request.query[:100])
+        raise HTTPException(status_code=e.http_status, detail=e.message)
+    except SynthesisError as e:
+        logger.exception("Synthesis error for query: {}", request.query[:100])
+        raise HTTPException(status_code=e.http_status, detail=e.message)
+    except VerificationError as e:
+        logger.exception("Verification error for query: {}", request.query[:100])
         raise HTTPException(status_code=e.http_status, detail=e.message)
     except Exception as e:
         logger.exception(

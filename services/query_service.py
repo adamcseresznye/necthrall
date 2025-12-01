@@ -59,6 +59,7 @@ class PipelineResult:
         passages: Top ranked passages after reranking (Week 2).
         answer: Synthesized answer from passages (Stage 9).
         citation_verification: Citation verification result (Stage 10).
+        refinement_count: Number of query refinement attempts (0 or 1).
     """
 
     query: str
@@ -73,6 +74,7 @@ class PipelineResult:
     passages: List[Any] = field(default_factory=list)
     answer: Optional[str] = None
     citation_verification: Optional[Dict[str, Any]] = None
+    refinement_count: int = 0
 
 
 class QueryServiceError(Exception):
@@ -260,6 +262,87 @@ class QueryService:
             self._verifier = CitationVerifier()
         return self._verifier
 
+    async def _execute_search_and_quality_gate(
+        self,
+        queries: List[str],
+        timing_breakdown: Dict[str, float],
+        attempt_label: str = "",
+    ) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
+        """Execute Semantic Scholar search and Quality Gate validation.
+
+        Helper method to keep the refinement loop logic flat.
+
+        Args:
+            queries: List of query strings for multi_query_search.
+            timing_breakdown: Dict to update with timing info.
+            attempt_label: Label for logging (e.g., "" or "_refinement").
+
+        Returns:
+            Tuple of (papers, quality_result).
+
+        Raises:
+            SemanticScholarError: If search fails.
+            QualityGateError: If quality validation fails.
+        """
+        # Semantic Scholar Search
+        logger.info(
+            "Stage 2{}: Semantic Scholar search - queries: {}",
+            attempt_label,
+            [q[:50] for q in queries],
+        )
+        stage_start = time.perf_counter()
+        try:
+            papers = await self._get_client().multi_query_search(
+                queries, limit_per_query=100
+            )
+            search_key = f"semantic_scholar_search{attempt_label}"
+            timing_breakdown[search_key] = time.perf_counter() - stage_start
+            logger.info(
+                "Semantic Scholar search{} completed in {:.3f}s - found {} papers",
+                attempt_label,
+                timing_breakdown[search_key],
+                len(papers),
+            )
+        except Exception as e:
+            logger.exception(
+                "Semantic Scholar search{} failed for queries: {}",
+                attempt_label,
+                [q[:50] for q in queries],
+            )
+            if "Semantic Scholar" in str(e) or "503" in str(e):
+                raise SemanticScholarError(
+                    "Semantic Scholar API is currently unavailable. Please try again later."
+                ) from e
+            raise SemanticScholarError(f"Failed to search papers: {str(e)}") from e
+
+        # Quality Gate
+        logger.info(
+            "Stage 3{}: Quality gate validation - {} papers to validate",
+            attempt_label,
+            len(papers),
+        )
+        stage_start = time.perf_counter()
+        try:
+            query_embedding = None
+            quality_result = validate_quality(papers, query_embedding)
+            gate_key = f"quality_gate{attempt_label}"
+            timing_breakdown[gate_key] = time.perf_counter() - stage_start
+            logger.info(
+                "Quality gate{} completed in {:.3f}s - passed: {}",
+                attempt_label,
+                timing_breakdown[gate_key],
+                quality_result["passed"],
+            )
+        except Exception as e:
+            logger.exception(
+                "Quality gate{} validation failed for {} papers",
+                attempt_label,
+                len(papers),
+            )
+            raise QualityGateError(f"Failed to validate paper quality: {str(e)}") from e
+
+        return papers, quality_result
+
     async def process_query(self, query: str) -> PipelineResult:
         """Process a user query through the complete Week 1 + Week 2 pipeline.
 
@@ -288,6 +371,7 @@ class QueryService:
         """
         start_time = time.perf_counter()
         timing_breakdown = {}
+        refinement_count = 0
         result = PipelineResult(
             query=query,
             optimized_queries={},
@@ -297,6 +381,7 @@ class QueryService:
             timing_breakdown={},
             success=False,
             passages=[],
+            refinement_count=0,
         )
 
         try:
@@ -327,70 +412,51 @@ class QueryService:
                     f"Failed to optimize query: {str(e)}"
                 ) from e
 
-            # Stage 2: Semantic Scholar Search
-            logger.info(
-                "Stage 2: Semantic Scholar search - queries: {}",
-                [
-                    q[:50]
-                    for q in [
-                        optimized_queries["primary"],
-                        optimized_queries["broad"],
-                        optimized_queries["alternative"],
-                    ]
-                ],
+            # Stage 2 & 3: Semantic Scholar Search + Quality Gate (with refinement loop)
+            queries = [
+                optimized_queries["primary"],
+                optimized_queries["broad"],
+                optimized_queries["alternative"],
+            ]
+            papers, quality_result = await self._execute_search_and_quality_gate(
+                queries, timing_breakdown, attempt_label=""
             )
-            stage_start = time.perf_counter()
-            try:
-                queries = [
-                    optimized_queries["primary"],
-                    optimized_queries["broad"],
-                    optimized_queries["alternative"],
-                ]
-                papers = await self._get_client().multi_query_search(
-                    queries, limit_per_query=100
-                )
-                timing_breakdown["semantic_scholar_search"] = (
-                    time.perf_counter() - stage_start
-                )
-                logger.info(
-                    "Semantic Scholar search completed in {:.3f}s - found {} papers",
-                    timing_breakdown["semantic_scholar_search"],
-                    len(papers),
-                )
-            except Exception as e:
-                logger.exception(
-                    "Semantic Scholar search failed for queries: {}",
-                    [q[:50] for q in queries],
-                )
-                if "Semantic Scholar" in str(e) or "503" in str(e):
-                    raise SemanticScholarError(
-                        "Semantic Scholar API is currently unavailable. Please try again later."
-                    ) from e
-                raise SemanticScholarError(f"Failed to search papers: {str(e)}") from e
 
-            # Stage 3: Quality Gate
-            logger.info(
-                "Stage 3: Quality gate validation - {} papers to validate", len(papers)
-            )
-            stage_start = time.perf_counter()
-            try:
-                # Week 1: No query embedding needed - quality gate uses paper-level metrics only
-                # (citations, recency, venue quality)
-                query_embedding = None
-                quality_result = validate_quality(papers, query_embedding)
-                timing_breakdown["quality_gate"] = time.perf_counter() - stage_start
+            # Refinement Loop: If quality gate fails on first attempt, try with broad query
+            if not quality_result["passed"] and refinement_count == 0:
+                logger.warning(
+                    "⚠️ Quality gate failed on first attempt, attempting refinement with broad query..."
+                )
+                refinement_count = 1
+
+                # Use broad query as fallback for refinement
+                fallback_query = optimized_queries.get("broad", query)
                 logger.info(
-                    "Quality gate completed in {:.3f}s - passed: {}",
-                    timing_breakdown["quality_gate"],
-                    quality_result["passed"],
+                    "🔄 Refinement attempt {} - using fallback query: {}",
+                    refinement_count,
+                    fallback_query[:100],
                 )
-            except Exception as e:
-                logger.exception(
-                    "Quality gate validation failed for {} papers", len(papers)
+
+                # Re-run search and quality gate with fallback query
+                refinement_queries = [
+                    fallback_query,
+                    optimized_queries.get("alternative", query),
+                    query,
+                ]
+                papers, quality_result = await self._execute_search_and_quality_gate(
+                    refinement_queries, timing_breakdown, attempt_label="_refinement"
                 )
-                raise QualityGateError(
-                    f"Failed to validate paper quality: {str(e)}"
-                ) from e
+
+                if quality_result["passed"]:
+                    logger.info(
+                        "✅ Refinement successful - quality gate passed on attempt {}",
+                        refinement_count + 1,
+                    )
+                else:
+                    logger.warning(
+                        "❌ Refinement failed - quality gate still not passed after {} attempt(s)",
+                        refinement_count + 1,
+                    )
 
             finalists = []
             if quality_result["passed"]:
@@ -437,6 +503,7 @@ class QueryService:
                     timing_breakdown=timing_breakdown,
                     success=True,
                     passages=[],
+                    refinement_count=refinement_count,
                 )
                 return result
 
@@ -456,6 +523,7 @@ class QueryService:
                     timing_breakdown=timing_breakdown,
                     success=True,
                     passages=[],
+                    refinement_count=refinement_count,
                 )
                 return result
 
@@ -500,6 +568,7 @@ class QueryService:
                     timing_breakdown=timing_breakdown,
                     success=True,
                     passages=[],
+                    refinement_count=refinement_count,
                 )
                 return result
 
@@ -544,6 +613,7 @@ class QueryService:
                     timing_breakdown=timing_breakdown,
                     success=True,
                     passages=[],
+                    refinement_count=refinement_count,
                 )
                 return result
 
@@ -593,6 +663,7 @@ class QueryService:
                     timing_breakdown=timing_breakdown,
                     success=True,
                     passages=[],
+                    refinement_count=refinement_count,
                 )
                 return result
 
@@ -696,16 +767,18 @@ class QueryService:
                 passages=final_passages,
                 answer=answer,
                 citation_verification=citation_verification,
+                refinement_count=refinement_count,
             )
 
             logger.info(
                 "✅ Full pipeline completed in {:.3f}s - "
-                "quality_gate: {}, finalists: {}, passages: {}, answer: {}",
+                "quality_gate: {}, finalists: {}, passages: {}, answer: {}, refinements: {}",
                 execution_time,
                 quality_result["passed"],
                 len(finalists),
                 len(final_passages),
                 "yes" if answer else "no",
+                refinement_count,
             )
             return result
 
