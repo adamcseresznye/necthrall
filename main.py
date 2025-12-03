@@ -28,13 +28,14 @@ if os.name == "nt":
     except ImportError:
         pass
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from loguru import logger
 from datetime import datetime
 import time
 import numpy as np
+from services.job_manager import job_manager
 from services.query_service import (
     QueryOptimizationError,
     SemanticScholarError,
@@ -234,51 +235,57 @@ async def health_check():
         }
 
 
-@app.post("/query", response_model=QueryResponse)
-async def query_endpoint(request: QueryRequest):
-    """Execute the full 10-stage pipeline and return a synthesized answer with citations.
+@app.post("/query")
+async def query_endpoint(request: QueryRequest, background_tasks: BackgroundTasks):
+    """Submit a query for asynchronous processing.
 
     **Pipeline Stages:**
     - Week 1 (1-4): query_optimization → semantic_scholar_search → quality_gate → composite_scoring
     - Week 2 (5-8): pdf_acquisition → processing → hybrid_retrieval → cross_encoder_reranking
     - Week 3 (9-10): synthesis → citation_verification
 
-    **Returns:**
-    - `answer`: Synthesized text with inline [N] citations
-    - `citations`: List of passage objects with id, text, and metadata for frontend modals
-    - `finalists`: Papers found during search
-    - `execution_time`: Total processing time in seconds
-    - `timing_breakdown`: Per-stage timing breakdown
+    **Returns immediately with:**
+    - `task_id`: UUID to poll for results
+    - `status`: "pending"
 
-    **Example Response:**
-    ```json
-    {
-        "answer": "Intermittent fasting reduces blood pressure [1] and improves cardiac function [2].",
-        "citations": [
-            {"id": 1, "text": "Blood pressure decreased by 8.5 mmHg...", "metadata": {...}},
-            {"id": 2, "text": "Cardiac function improved significantly...", "metadata": {...}}
-        ],
-        "finalists": [...],
-        "execution_time": 12.5,
-        "timing_breakdown": {"query_optimization": 0.5, ...}
-    }
-    ```
+    **Poll GET /jobs/{task_id} for results.**
+    """
+    # Create a new job
+    job_id = job_manager.create_job()
+    logger.info(f"📋 Created job {job_id} for query: {request.query[:100]}...")
+
+    # Schedule background processing
+    background_tasks.add_task(
+        run_query_background,
+        job_id=job_id,
+        query=request.query,
+        query_service=app.state.query_service,
+    )
+
+    return {"task_id": job_id, "status": "pending"}
+
+
+async def run_query_background(job_id: str, query: str, query_service) -> None:
+    """Background wrapper that runs the query pipeline and updates the job manager.
+
+    Args:
+        job_id: The UUID of the job to update.
+        query: The user's query string.
+        query_service: The QueryService instance.
     """
     try:
-        logger.info(f"Processing query: {request.query[:100]}...")
+        job_manager.update_job(job_id, "processing")
+        logger.info(f"🔄 Processing job {job_id}...")
 
-        # Use the query service to process the request
-        result = await app.state.query_service.process_query(request.query)
+        # Run the actual pipeline
+        result = await query_service.process_query(query)
 
         # Check if pipeline succeeded
         if not result.success:
-            logger.error(
-                f"Pipeline failed at stage '{result.error_stage}': {result.error_message}"
-            )
-            raise HTTPException(
-                status_code=500,
-                detail=f"Pipeline failed at stage '{result.error_stage}': {result.error_message}",
-            )
+            error_msg = f"Pipeline failed at stage '{result.error_stage}': {result.error_message}"
+            logger.error(f"❌ Job {job_id}: {error_msg}")
+            job_manager.update_job(job_id, "failed", error=error_msg)
+            return
 
         # Transform passages to citations with id, text, and metadata
         citations = []
@@ -301,11 +308,11 @@ async def query_endpoint(request: QueryRequest):
                 # Add score to metadata for frontend use
                 metadata["score"] = passage.score
 
-                citation_item = CitationItem(
-                    id=idx + 1,  # 1-based index to match [N] citations
-                    text=text,
-                    metadata=metadata,
-                )
+                citation_item = {
+                    "id": idx + 1,  # 1-based index to match [N] citations
+                    "text": text,
+                    "metadata": metadata,
+                }
                 citations.append(citation_item)
             except Exception as e:
                 logger.warning(f"Failed to serialize passage {idx}: {e}")
@@ -316,60 +323,42 @@ async def query_endpoint(request: QueryRequest):
             result.answer or "No answer could be generated from the available sources."
         )
 
+        # Build the response
+        response = {
+            "answer": answer,
+            "citations": citations,
+            "finalists": result.finalists,
+            "execution_time": result.execution_time,
+            "timing_breakdown": result.timing_breakdown,
+        }
+
+        job_manager.update_job(job_id, "completed", result=response)
         logger.info(
-            f"Query processed successfully: {len(citations)} citations, "
+            f"✅ Job {job_id} completed: {len(citations)} citations, "
             f"{len(result.finalists)} finalists, {result.execution_time:.2f}s"
         )
 
-        return QueryResponse(
-            answer=answer,
-            citations=citations,
-            finalists=result.finalists,
-            execution_time=result.execution_time,
-            timing_breakdown=result.timing_breakdown,
-        )
-
-    except HTTPException:
-        # Re-raise HTTPExceptions as-is
-        raise
-    except QueryOptimizationError as e:
-        logger.exception("Query optimization error for query: {}", request.query[:100])
-        raise HTTPException(status_code=e.http_status, detail=e.message)
-    except SemanticScholarError as e:
-        logger.exception("Semantic Scholar error for query: {}", request.query[:100])
-        raise HTTPException(status_code=e.http_status, detail=e.message)
-    except QualityGateError as e:
-        logger.exception("Quality gate error for query: {}", request.query[:100])
-        raise HTTPException(status_code=e.http_status, detail=e.message)
-    except RankingError as e:
-        logger.exception("Ranking error for query: {}", request.query[:100])
-        raise HTTPException(status_code=e.http_status, detail=e.message)
-    except AcquisitionError as e:
-        logger.exception("PDF acquisition error for query: {}", request.query[:100])
-        raise HTTPException(status_code=e.http_status, detail=e.message)
-    except ProcessingError as e:
-        logger.exception("Processing error for query: {}", request.query[:100])
-        raise HTTPException(status_code=e.http_status, detail=e.message)
-    except RetrievalError as e:
-        logger.exception("Retrieval error for query: {}", request.query[:100])
-        raise HTTPException(status_code=e.http_status, detail=e.message)
-    except RerankingError as e:
-        logger.exception("Reranking error for query: {}", request.query[:100])
-        raise HTTPException(status_code=e.http_status, detail=e.message)
-    except SynthesisError as e:
-        logger.exception("Synthesis error for query: {}", request.query[:100])
-        raise HTTPException(status_code=e.http_status, detail=e.message)
-    except VerificationError as e:
-        logger.exception("Verification error for query: {}", request.query[:100])
-        raise HTTPException(status_code=e.http_status, detail=e.message)
     except Exception as e:
-        logger.exception(
-            "Unexpected error in query endpoint for query: {}", request.query[:100]
-        )
-        raise HTTPException(
-            status_code=500,
-            detail="An unexpected error occurred. Please try again later.",
-        )
+        error_msg = f"Unexpected error: {str(e)}"
+        logger.exception(f"❌ Job {job_id} failed: {error_msg}")
+        job_manager.update_job(job_id, "failed", error=error_msg)
+
+
+@app.get("/jobs/{task_id}")
+async def get_job_status(task_id: str):
+    """Poll for job status and results.
+
+    **Returns:**
+    - `id`: The job UUID
+    - `status`: "pending", "processing", "completed", or "failed"
+    - `created_at`: Timestamp when job was created
+    - `result`: The QueryResponse object (when status is "completed")
+    - `error`: Error message (when status is "failed")
+    """
+    job = job_manager.get_job(task_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Job {task_id} not found")
+    return job
 
 
 if __name__ == "__main__":

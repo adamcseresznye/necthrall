@@ -581,10 +581,11 @@ class QueryService:
             chunks = []
             try:
                 processing_agent = self._get_processing_agent()
+                logger.info("📉 Using reduced batch_size=1 for low-memory environment")
                 state = processing_agent.process(
                     state,
                     embedding_model=self.embedding_model,
-                    batch_size=32,
+                    batch_size=1,
                 )
                 chunks = state.chunks or []
                 timing_breakdown["processing"] = time.perf_counter() - stage_start

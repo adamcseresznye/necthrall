@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gc
 from typing import List, Dict, Any, Optional
 import time
 from loguru import logger
@@ -69,6 +70,9 @@ class ProcessingAgent:
         loop_start = time.perf_counter()
 
         for idx, passage in enumerate(state.passages):
+            # Pre-GC: Clean up memory at the start of each iteration
+            gc.collect()
+
             paper_id = (
                 passage.get("paperId") or passage.get("paper_id") or f"paper_{idx}"
             )
@@ -86,6 +90,15 @@ class ProcessingAgent:
             if not text.strip():
                 logger.warning({"event": "empty_passage_skipped", "paper_id": paper_id})
                 continue
+
+            # Text truncation to save memory on large PDFs
+            original_len = len(text)
+            if original_len > 40000:
+                text = text[:40000]
+                logger.warning(
+                    f"✂️ Truncated paper {paper_id} from {original_len} to 40000 chars to save memory"
+                )
+
             had_nonempty_passage = True
 
             logger.info({"event": "processing_paper_start", "paper_id": paper_id})
@@ -93,6 +106,7 @@ class ProcessingAgent:
             # Create single document from passage text
             # MarkdownNodeParser will automatically split by headers
             doc = Document(text=text)
+            markdown_nodes = []  # Initialize to avoid NameError in cleanup
 
             try:
                 logger.debug(
@@ -149,6 +163,11 @@ class ProcessingAgent:
                     "chunks": paper_chunk_count,
                 }
             )
+
+            # Memory cleanup: delete temporary variables and force garbage collection
+            del doc, text, nodes, markdown_nodes
+            gc.collect()
+            logger.debug(f"♻️ GC called after processing paper {paper_id}")
 
         loop_end = time.perf_counter()
         chunking_time = loop_end - loop_start
