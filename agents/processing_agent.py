@@ -85,6 +85,9 @@ class ProcessingAgent:
             influential = passage.get(
                 "influentialCitationCount", passage.get("influential_citation_count", 0)
             )
+            # Extract PDF URL from openAccessPdf object
+            oa_pdf = passage.get("openAccessPdf")
+            pdf_url = oa_pdf.get("url") if oa_pdf and isinstance(oa_pdf, dict) else None
             text = passage.get("text", "") or ""
 
             if not text.strip():
@@ -152,6 +155,8 @@ class ProcessingAgent:
                     node.metadata["venue"] = venue
                 if influential is not None:
                     node.metadata["influential_citation_count"] = influential
+                if pdf_url:
+                    node.metadata["pdf_url"] = pdf_url
 
                 all_chunks.append(node)
                 paper_chunk_count += 1
