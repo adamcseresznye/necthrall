@@ -1,3 +1,12 @@
+---
+title: Necthrall
+emoji: 🔬
+colorFrom: purple
+colorTo: blue
+sdk: docker
+pinned: false
+---
+
 # Necthrall Lite
 
 Your on-demand, credibility-aware scientific explainer. Fetches open-access papers, builds a per-query RAG index, and returns a concise synthesis with inline citations, passage spans, a consensus gauge, and contradiction highlights.
