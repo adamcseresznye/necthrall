@@ -132,4 +132,4 @@ ui.run_with(
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("main:app", host="0.0.0.0", port=7860, log_level="info")
+    uvicorn.run("main:app", host="0.0.0.0", port=7860, log_level="info", reload=True)
