@@ -75,7 +75,7 @@ graph TD
 
   * **UI/Server:** NiceGUI + FastAPI (Single Python app)
   * **RAG:** LlamaIndex + FAISS (Ephemeral in-memory indices)
-  * **Data:** Semantic Scholar API + Unpaywall
+  * **Data:** Semantic Scholar API
   * **LLM Routing:** LiteLLM
 
 -----

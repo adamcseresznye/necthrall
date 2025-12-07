@@ -186,19 +186,24 @@ def init_ui(fastapi_app):
 
                     # 3. Tip (responsive)
                     ui.label(
-                        "This may take 15-30 seconds. We are reading real papers."
+                        "This may take 15-30 seconds. We are reading real papers. Please do not close this tab."
                     ).classes(
                         "text-sm md:text-base lg:text-lg text-slate-400 italic text-center max-w-xl mx-auto"
                     )
 
                 # Simulated progress steps
                 messages = [
-                    "Querying Semantic Scholar API...",
-                    "Filtering top candidate papers...",
-                    "Downloading open-access PDFs...",
-                    "Analyzing citation networks...",
-                    "Extracting relevant passages...",
-                    "Synthesizing final answer...",
+                    "Refining your research question...",
+                    "Reading metadata from 200M+ papers...",
+                    "Filtering for high-impact studies...",
+                    "Downloading full-text documents...",
+                    "Reading and analyzing paper content...",
+                    "Isolating key evidence and data...",
+                    "Cross-referencing claims against sources...",
+                    "Drafting the final response...",
+                    "Double-checking citation links...",
+                    "Finalizing your research summary...",
+                    "Almost ready...",
                 ]
                 msg_idx = 0
 

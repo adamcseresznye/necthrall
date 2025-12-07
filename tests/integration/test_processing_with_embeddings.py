@@ -61,7 +61,7 @@ def test_chunking_failure_skips_embedding(monkeypatch):
     state = State(query="test2", passages=passages)
     agent = ProcessingAgent(chunk_size=200, chunk_overlap=20)
 
-    orig_parser = agent.parser
+    orig_parser = agent.markdown_parser
 
     class BrokenParser:
         def __init__(self, delegate):
@@ -74,7 +74,7 @@ def test_chunking_failure_skips_embedding(monkeypatch):
                 raise RuntimeError("simulated chunker failure")
             return self._delegate.get_nodes_from_documents(docs)
 
-    agent.parser = BrokenParser(orig_parser)
+    agent.markdown_parser = BrokenParser(orig_parser)
 
     processed = agent.process(state, embedding_model=DummyEmbedModel(), batch_size=16)
 
@@ -97,7 +97,7 @@ def test_metadata_preserved_through_embedding():
     assert processed.chunks is not None
     for idx, c in enumerate(processed.chunks):
         assert c.metadata.get("paper_id") == "meta1"
-        assert "section_name" in c.metadata
+        assert "header_path" in c.metadata
         assert "chunk_index" in c.metadata
         # embedding still present
         emb = c.metadata.get("embedding")

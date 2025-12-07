@@ -125,7 +125,7 @@ ui.run_with(
     title="Nechtrall",
     favicon="logo/favicon.png",
     dark=False,
-    storage_secret="necthrall-secret-key",
+    reconnect_timeout=30.0,
 )
 
 

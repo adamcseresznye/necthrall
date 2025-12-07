@@ -18,6 +18,7 @@ Week 2 Stages (5-8):
 
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Dict, List, Any, Optional, TYPE_CHECKING
 from dataclasses import dataclass, field
@@ -466,8 +467,10 @@ class QueryService:
                 )
                 stage_start = time.perf_counter()
                 try:
-                    finalists = self._get_ranker().rank_papers(
-                        papers, optimized_queries["final_rephrase"]
+                    finalists = await asyncio.to_thread(
+                        self._get_ranker().rank_papers,
+                        papers,
+                        optimized_queries["final_rephrase"],
                     )
                     timing_breakdown["composite_scoring"] = (
                         time.perf_counter() - stage_start
@@ -582,7 +585,8 @@ class QueryService:
             try:
                 processing_agent = self._get_processing_agent()
                 logger.info("📉 Using reduced batch_size=1 for low-memory environment")
-                state = processing_agent.process(
+                state = await asyncio.to_thread(
+                    processing_agent.process,
                     state,
                     embedding_model=self.embedding_model,
                     batch_size=1,
@@ -704,7 +708,8 @@ class QueryService:
                 reranker = self._get_reranker()
                 # Use final_rephrase for reranking query
                 rerank_query = optimized_queries.get("final_rephrase", query)
-                final_passages = reranker.rerank(
+                final_passages = await asyncio.to_thread(
+                    reranker.rerank,
                     query=rerank_query,
                     nodes=retrieval_results,
                     top_k=12,
