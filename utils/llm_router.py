@@ -26,8 +26,8 @@ class LLMRouter:
 
     def __init__(self) -> None:
         # Store API keys for use in generate method
-        self._google_api_key = config.GOOGLE_API_KEY
-        self._groq_api_key = config.GROQ_API_KEY
+        self._primary_api_key = config.PRIMARY_LLM_API_KEY
+        self._secondary_api_key = config.SECONDARY_LLM_API_KEY
 
         # Read model names from config on instantiation. Keep values simple so
         # tests can patch the module attributes.
@@ -78,7 +78,7 @@ class LLMRouter:
                 model=primary,
                 messages=[{"role": "user", "content": prompt}],
                 timeout=timeout,
-                api_key=self._google_api_key,
+                api_key=self._primary_api_key,
             )
             used_label = "primary"
             used_model_name = primary
@@ -91,7 +91,7 @@ class LLMRouter:
                     model=fallback,
                     messages=[{"role": "user", "content": prompt}],
                     timeout=timeout,
-                    api_key=self._groq_api_key,
+                    api_key=self._secondary_api_key,
                 )
                 used_label = "fallback"
                 used_model_name = fallback
@@ -112,7 +112,7 @@ class LLMRouter:
                     model=fallback,
                     messages=[{"role": "user", "content": prompt}],
                     timeout=timeout,
-                    api_key=self._groq_api_key,
+                    api_key=self._secondary_api_key,
                 )
                 used_label = "fallback"
                 used_model_name = fallback
@@ -133,7 +133,7 @@ class LLMRouter:
                     model=fallback,
                     messages=[{"role": "user", "content": prompt}],
                     timeout=timeout,
-                    api_key=self._groq_api_key,
+                    api_key=self._secondary_api_key,
                 )
                 used_label = "fallback"
                 used_model_name = fallback

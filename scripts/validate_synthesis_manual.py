@@ -7,7 +7,7 @@ Usage:
     python scripts/validate_synthesis_manual.py
 
 Prerequisites:
-    - Set GOOGLE_API_KEY and/or GROQ_API_KEY in .env
+    - Set PRIMARY_LLM_API_KEY and/or SECONDARY_LLM_API_KEY in .env
     - Set SYNTHESIS_MODEL and SYNTHESIS_FALLBACK in .env
 
 Expected Output:
@@ -139,7 +139,7 @@ async def main() -> None:
         print_separator("ERROR")
         print(f"  Synthesis failed: {e}")
         print("\n  Check your .env file for:")
-        print("    - GOOGLE_API_KEY or GROQ_API_KEY")
+        print("    - PRIMARY_LLM_API_KEY or SECONDARY_LLM_API_KEY")
         print("    - SYNTHESIS_MODEL (e.g., gemini/gemini-1.5-flash)")
         print("    - SYNTHESIS_FALLBACK (e.g., groq/llama3-8b-8192)")
         raise

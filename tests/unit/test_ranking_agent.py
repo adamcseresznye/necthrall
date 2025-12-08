@@ -312,7 +312,7 @@ def test_more_than_10_papers_returns_top_10(sample_query_embedding):
             }
         )
 
-    finalists = agent.rank_papers(papers, query="rank")
+    finalists = agent.rank_papers(papers, query="rank", top_k=10)
 
     # Should return exactly 10 papers
     assert len(finalists) == 10

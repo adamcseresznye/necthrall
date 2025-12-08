@@ -9,8 +9,8 @@ def set_test_env():
     # Save original values
     original_values = {
         "SEMANTIC_SCHOLAR_API_KEY": os.environ.get("SEMANTIC_SCHOLAR_API_KEY"),
-        "GOOGLE_API_KEY": os.environ.get("GOOGLE_API_KEY"),
-        "GROQ_API_KEY": os.environ.get("GROQ_API_KEY"),
+        "PRIMARY_LLM_API_KEY": os.environ.get("PRIMARY_LLM_API_KEY"),
+        "SECONDARY_LLM_API_KEY": os.environ.get("SECONDARY_LLM_API_KEY"),
         "QUERY_OPTIMIZATION_MODEL": os.environ.get("QUERY_OPTIMIZATION_MODEL"),
         "SYNTHESIS_MODEL": os.environ.get("SYNTHESIS_MODEL"),
         "SKIP_DOTENV_LOADER": os.environ.get("SKIP_DOTENV_LOADER"),
@@ -18,8 +18,8 @@ def set_test_env():
 
     # Set test values
     os.environ["SEMANTIC_SCHOLAR_API_KEY"] = "test_key"
-    os.environ["GOOGLE_API_KEY"] = "test_key"
-    os.environ["GROQ_API_KEY"] = "test_key"
+    os.environ["PRIMARY_LLM_API_KEY"] = "test_key"
+    os.environ["SECONDARY_LLM_API_KEY"] = "test_key"
     os.environ["QUERY_OPTIMIZATION_MODEL"] = "test_model"
     os.environ["SYNTHESIS_MODEL"] = "test_model"
     os.environ["SKIP_DOTENV_LOADER"] = "1"

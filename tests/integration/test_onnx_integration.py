@@ -19,8 +19,8 @@ os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 # Pre-set test environment at module load time to avoid fixture overhead
 os.environ.setdefault("SEMANTIC_SCHOLAR_API_KEY", "test_key")
-os.environ.setdefault("GOOGLE_API_KEY", "test_key")
-os.environ.setdefault("GROQ_API_KEY", "test_key")
+os.environ.setdefault("PRIMARY_LLM_API_KEY", "test_key")
+os.environ.setdefault("SECONDARY_LLM_API_KEY", "test_key")
 os.environ.setdefault("QUERY_OPTIMIZATION_MODEL", "test_model")
 os.environ.setdefault("SYNTHESIS_MODEL", "test_model")
 os.environ["SKIP_DOTENV_LOADER"] = "1"

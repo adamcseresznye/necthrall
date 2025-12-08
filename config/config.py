@@ -43,8 +43,8 @@ SYNTHESIS_FALLBACK = os.getenv("SYNTHESIS_FALLBACK")
 # ============================================================================
 # API Keys for LiteLLM Providers
 # ============================================================================
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+PRIMARY_LLM_API_KEY = os.getenv("PRIMARY_LLM_API_KEY")
+SECONDARY_LLM_API_KEY = os.getenv("SECONDARY_LLM_API_KEY")
 
 # ============================================================================
 # Application Settings
@@ -79,12 +79,12 @@ def validate_config() -> None:
             "value": SEMANTIC_SCHOLAR_API_KEY,
             "help": "Get free key at https://www.semanticscholar.org/product/api",
         },
-        "GOOGLE_API_KEY": {
-            "value": GOOGLE_API_KEY,
+        "PRIMARY_LLM_API_KEY": {
+            "value": PRIMARY_LLM_API_KEY,
             "help": "Get free key at https://ai.google.dev/",
         },
-        "GROQ_API_KEY": {
-            "value": GROQ_API_KEY,
+        "SECONDARY_LLM_API_KEY": {
+            "value": SECONDARY_LLM_API_KEY,
             "help": "Get free key at https://console.groq.com/keys",
         },
     }
@@ -125,8 +125,8 @@ def validate_config() -> None:
     logger.info("  Synthesis fallback: {}", SYNTHESIS_FALLBACK)
     logger.info("  Timeout: {}s", TIMEOUT)
     logger.debug("  SEMANTIC_SCHOLAR_API_KEY: {}", _mask_key(SEMANTIC_SCHOLAR_API_KEY))
-    logger.debug("  GOOGLE_API_KEY: {}", _mask_key(GOOGLE_API_KEY))
-    logger.debug("  GROQ_API_KEY: {}", _mask_key(GROQ_API_KEY))
+    logger.debug("  PRIMARY_LLM_API_KEY: {}", _mask_key(PRIMARY_LLM_API_KEY))
+    logger.debug("  SECONDARY_LLM_API_KEY: {}", _mask_key(SECONDARY_LLM_API_KEY))
 
     elapsed_ms = (time.perf_counter() - start) * 1000.0
     logger.debug("Configuration validation took %.2fms", elapsed_ms)

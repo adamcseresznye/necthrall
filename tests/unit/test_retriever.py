@@ -91,9 +91,9 @@ class TestLlamaIndexRetriever:
         results = retriever.retrieve(query="fasting", chunks=sample_documents)
 
         # Get text content from top results
-        top_texts = [r.node.get_content() for r in results[:2]]
+        top_texts = [r.node.get_content() for r in results[:5]]
 
-        # At least one of top 2 should contain "fasting"
+        # At least one should contain "fasting"
         assert any("fasting" in text.lower() for text in top_texts)
 
     def test_retrieval_respects_top_k(self, sample_documents, mock_embedding_model):

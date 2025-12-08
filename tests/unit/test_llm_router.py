@@ -48,8 +48,8 @@ async def test_generate_fallback_path():
     with (
         patch("config.config.QUERY_OPTIMIZATION_MODEL", primary_model),
         patch("config.config.QUERY_OPTIMIZATION_FALLBACK", fallback_model),
-        patch("config.config.GOOGLE_API_KEY", "fake_google_key"),
-        patch("config.config.GROQ_API_KEY", "fake_groq_key"),
+        patch("config.config.PRIMARY_LLM_API_KEY", "fake_google_key"),
+        patch("config.config.SECONDARY_LLM_API_KEY", "fake_groq_key"),
         patch("litellm.acompletion", new_callable=AsyncMock) as mock_acompletion,
     ):
 

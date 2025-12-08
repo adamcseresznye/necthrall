@@ -130,8 +130,8 @@ Total Expected: ~2.6s (well within <5s target) ✅
 ```
 # API Keys
 SEMANTIC_SCHOLAR_API_KEY=<your_key>
-GOOGLE_API_KEY=<your_key>
-GROQ_API_KEY=<your_key>
+PRIMARY_LLM_API_KEY=<your_key>
+SECONDARY_LLM_API_KEY=<your_key>
 
 # LLM Models
 QUERY_OPTIMIZATION_MODEL=gemini-2.5-flash-lite-preview-09-2025

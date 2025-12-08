@@ -246,16 +246,17 @@ class RankingAgent:
     """
 
     def rank_papers(
-        self, papers: List[Dict[str, Any]], query: str
+        self, papers: List[Dict[str, Any]], query: str, top_k: int = 50
     ) -> List[Dict[str, Any]]:
         """Rank papers using the hybrid ranking model.
 
         Args:
             papers: List[Dict] of Semantic Scholar papers
             query: The optimized query string for ranking
+            top_k: Number of top papers to return (default: 50 for Base+Bonus strategy)
 
         Returns:
-            List[Dict]: Top 10 papers with all computed rank/score fields added,
+            List[Dict]: Top k papers with all computed rank/score fields added,
                         returned as a List of Dictionaries.
         """
         # --- 1. Validate inputs ---
@@ -302,8 +303,8 @@ class RankingAgent:
         logger.debug("Computing final RRF, authority, recency, and weighted score...")
         ranked_df = _compute_final_ranking(df)
 
-        # --- 5. Convert top 10 back to List[Dict] ---
-        finalists_df = ranked_df.head(10)
+        # --- 5. Convert top k back to List[Dict] ---
+        finalists_df = ranked_df.head(top_k)
         # Convert DataFrame to a list of dictionaries
         finalists = finalists_df.to_dict("records")
 

@@ -90,8 +90,10 @@ async def test_acquisition_enriches_state_success(monkeypatch):
     new_state = await agent.process(state)
 
     assert new_state.passages is not None
-    assert len(new_state.passages) == 1
-    p = new_state.passages[0]
+    assert len(new_state.passages) == 2
+    pdf_passages = [p for p in new_state.passages if p["text_source"] == "pdf"]
+    assert len(pdf_passages) == 1
+    p = pdf_passages[0]
     assert p["paperId"] == "abc123"
     assert p["text_source"] == "pdf"
     assert len(p["text"]) > 500
@@ -115,11 +117,10 @@ async def test_acquisition_timeout_skips(monkeypatch):
     agent.PER_PDF_TIMEOUT = 0.05
 
     new_state = await agent.process(state)
-    assert (
-        new_state.passages == []
-        or new_state.passages is None
-        or len(new_state.passages) == 0
-    )
+    assert new_state.passages is not None
+    assert len(new_state.passages) == 1
+    p = new_state.passages[0]
+    assert p["text_source"] == "abstract"
 
 
 @pytest.mark.unit
@@ -138,7 +139,10 @@ async def test_acquisition_http_404_skips(monkeypatch):
     agent.PER_PDF_TIMEOUT = 1.0
 
     new_state = await agent.process(state)
-    assert new_state.passages == [] or new_state.passages is None
+    assert new_state.passages is not None
+    assert len(new_state.passages) == 1
+    p = new_state.passages[0]
+    assert p["text_source"] == "abstract"
 
 
 @pytest.mark.unit
@@ -159,7 +163,10 @@ async def test_acquisition_malformed_pdf_skips(monkeypatch):
 
     new_state = await agent.process(state)
     # should be skipped
-    assert new_state.passages == [] or new_state.passages is None
+    assert new_state.passages is not None
+    assert len(new_state.passages) == 1
+    p = new_state.passages[0]
+    assert p["text_source"] == "abstract"
 
 
 @pytest.mark.unit
@@ -179,8 +186,12 @@ async def test_acquisition_zero_successes_appends_error(monkeypatch):
     agent.PER_PDF_TIMEOUT = 1.0
 
     new_state = await agent.process(state)
-    assert new_state.passages == [] or new_state.passages is None
-    assert any("Critical: No PDFs acquired" in e for e in new_state.errors)
+    assert new_state.passages is not None
+    assert len(new_state.passages) == 3
+    for p in new_state.passages:
+        assert p["text_source"] == "abstract"
+    # No error since abstracts are acquired
+    assert not new_state.errors
 
 
 @pytest.mark.unit
@@ -213,7 +224,10 @@ async def test_acquisition_get_raises_timeout(monkeypatch):
     agent.PER_PDF_TIMEOUT = 0.5
 
     new_state = await agent.process(state)
-    assert new_state.passages == [] or new_state.passages is None
+    assert new_state.passages is not None
+    assert len(new_state.passages) == 1
+    p = new_state.passages[0]
+    assert p["text_source"] == "abstract"
 
 
 @pytest.mark.unit
@@ -244,8 +258,10 @@ async def test_acquisition_parallel_10_with_2_failures(monkeypatch):
     new_state = await agent.process(state)
     elapsed = time.monotonic() - start
 
-    # successful should be 8 (two timed out)
+    # successful should be 5 PDFs (target limit), plus 10 abstracts
     passages = new_state.passages or []
-    assert len(passages) == 8
+    assert len(passages) == 15
+    pdf_passages = [p for p in passages if p["text_source"] == "pdf"]
+    assert len(pdf_passages) == 5
     # requirement: return in under 4 seconds in real world; here ensure it's fast
     assert elapsed < 4.0

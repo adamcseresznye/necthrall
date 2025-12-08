@@ -1,7 +1,7 @@
 """Legal policies text for Necthrall UI."""
 
 PRIVACY_POLICY = """
-**Last Updated:** December 4, 2025
+**Last Updated:** December 7, 2025
 
 **1. Introduction**
 Necthrall ("we," "us," or "our") operates the Necthrall application (the "Service"). This page informs you of our policies regarding the collection, use, and disclosure of personal data when you use our Service and the choices you have associated with that data.
@@ -34,10 +34,10 @@ We employ third-party companies and individuals ("Service Providers") to facilit
 The Service utilizes the following third-party API providers:
 
   * **Semantic Scholar (Allen Institute for AI):** For the retrieval of scientific literature metadata.
-      * [Privacy Policy](https://www.google.com/search?q=https://www.semanticscholar.org/product/api%23terms)
-  * **Google (Vertex AI / Gemini):** For natural language processing and query optimization.
-      * [Google Cloud Privacy Notice](https://cloud.google.com/terms/cloud-privacy-notice)
-  * **Groq:** For large language model inference.
+      * [Privacy Policy](https://alleninstitute.org/privacy-policy/)
+  * **Cerebras (Cerebras Systems, Inc.):** For large language model inference.
+      * [Cerebras Privacy Policy](https://www.cerebras.ai/policies)
+  * **Groq (Groq, Inc.):** For large language model inference.
       * [Groq Privacy Policy](https://wow.groq.com/privacy-policy/)
 
 **5. Data Security**
@@ -55,7 +55,7 @@ We may update our Privacy Policy from time to time. We will notify you of any ch
 **9. Contact Us**
 If you have any questions about this Privacy Policy, please contact us:
 
-  * By visiting our page on GitHub: https://github.com/adamcseresznye/necthrall
+  * By visiting our page on [GitHub](https://github.com/adamcseresznye/necthrall)
 """
 
 TERMS_OF_SERVICE = """
@@ -85,5 +85,5 @@ TERMS_OF_SERVICE = """
 
 9. **Changes to Terms** We reserve the right to modify these Terms at any time. We will provide notice of significant changes by updating the "Last Updated" date at the top of this page. Your continued use of the Service after any such change constitutes your acceptance of the new Terms.
 
-10. **Contact Us** If you have any questions about these Terms, please contact us at https://github.com/adamcseresznye/necthrall.
+10. **Contact Us** If you have any questions about these Terms, please contact us on [GitHub](https://github.com/adamcseresznye/necthrall).
 """

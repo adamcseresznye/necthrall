@@ -12,7 +12,7 @@ Keep suggestions tight and code-aware. Focus on the RAG pipeline, PDF handling, 
 
 - Developer workflows / commands (discoverable in repo README and test fixtures):
   - Install / dev: `pip install -e .`
-  - Configure: copy `.env.example` → `.env` and set keys (UNPAYWALL_EMAIL, OPENALEX_EMAIL, OPENAI_API_KEY or provider keys, LLM_MODEL_PRIMARY, LLM_MODEL_FALLBACK, GOOGLE_API_KEY, GROQ_API_KEY).
+  - Configure: copy `.env.example` → `.env` and set keys (LLM_MODEL_PRIMARY, LLM_MODEL_FALLBACK, PRIMARY_LLM_API_KEY, SECONDARY_LLM_API_KEY).
   - Run app (local dev): `python -m necthrall_lite` (project README shows this entrypoint). If you use `main.py` directly, prefer the configured FastAPI/NiceGUI integration entrypoint.
   - Tests: run `pytest -q`. Note `tests/conftest.py` pre-imports modules in a strict order to avoid DLL/threading issues – fitz (PyMuPDF) first, then torch, then sentence-transformers. Also set these env vars in CI/local shells to avoid deadlocks:
     - OMP_NUM_THREADS=1

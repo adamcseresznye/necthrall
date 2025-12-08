@@ -29,8 +29,8 @@ def _load_config_module_from_path(env: dict):
 def test_config_missing_semantic_scholar_key():
     """Missing Semantic Scholar key should raise ValueError with help URL."""
     env = {
-        "GOOGLE_API_KEY": "fake_google",
-        "GROQ_API_KEY": "fake_groq",
+        "PRIMARY_LLM_API_KEY": "fake_google",
+        "SECONDARY_LLM_API_KEY": "fake_groq",
     }
     with pytest.raises(ValueError) as exc_info:
         _load_config_module_from_path(env)
@@ -42,30 +42,30 @@ def test_config_missing_semantic_scholar_key():
 
 @pytest.mark.unit
 def test_config_missing_google_key():
-    """Missing GOOGLE_API_KEY should raise ValueError with help URL."""
+    """Missing PRIMARY_LLM_API_KEY should raise ValueError with help URL."""
     env = {
         "SEMANTIC_SCHOLAR_API_KEY": "fake_ss",
-        "GROQ_API_KEY": "fake_groq",
+        "SECONDARY_LLM_API_KEY": "fake_groq",
     }
     with pytest.raises(ValueError) as exc_info:
         _load_config_module_from_path(env)
 
     msg = str(exc_info.value)
-    assert "GOOGLE_API_KEY" in msg or "ai.google.dev" in msg
+    assert "PRIMARY_LLM_API_KEY" in msg or "ai.google.dev" in msg
 
 
 @pytest.mark.unit
-def test_config_missing_groq_key():
-    """Missing GROQ_API_KEY should raise ValueError with help URL."""
+def test_config_missing_secondary_llm_key():
+    """Missing SECONDARY_LLM_API_KEY should raise ValueError with help URL."""
     env = {
         "SEMANTIC_SCHOLAR_API_KEY": "fake_ss",
-        "GOOGLE_API_KEY": "fake_google",
+        "PRIMARY_LLM_API_KEY": "fake_google",
     }
     with pytest.raises(ValueError) as exc_info:
         _load_config_module_from_path(env)
 
     msg = str(exc_info.value)
-    assert "GROQ_API_KEY" in msg or "console.groq.com" in msg
+    assert "SECONDARY_LLM_API_KEY" in msg or "console.groq.com" in msg
 
 
 @pytest.mark.unit
@@ -73,16 +73,16 @@ def test_config_all_keys_present():
     """Config validation passes when all keys are present."""
     env = {
         "SEMANTIC_SCHOLAR_API_KEY": "fake_ss_key",
-        "GOOGLE_API_KEY": "fake_google_key",
-        "GROQ_API_KEY": "fake_groq_key",
+        "PRIMARY_LLM_API_KEY": "fake_google_key",
+        "SECONDARY_LLM_API_KEY": "fake_groq_key",
     }
     config = _load_config_module_from_path(env)
     # validate_config called on import; calling again should be OK
     config.validate_config()
 
     assert config.SEMANTIC_SCHOLAR_API_KEY == "fake_ss_key"
-    assert config.GOOGLE_API_KEY == "fake_google_key"
-    assert config.GROQ_API_KEY == "fake_groq_key"
+    assert config.PRIMARY_LLM_API_KEY == "fake_google_key"
+    assert config.SECONDARY_LLM_API_KEY == "fake_groq_key"
 
 
 @pytest.mark.unit
@@ -90,8 +90,8 @@ def test_custom_model_overrides():
     """Custom model names from env vars override the defaults."""
     env = {
         "SEMANTIC_SCHOLAR_API_KEY": "fake_ss_key",
-        "GOOGLE_API_KEY": "fake_google_key",
-        "GROQ_API_KEY": "fake_groq_key",
+        "PRIMARY_LLM_API_KEY": "fake_google_key",
+        "SECONDARY_LLM_API_KEY": "fake_groq_key",
         "QUERY_OPTIMIZATION_MODEL": "custom/query-model",
         "SYNTHESIS_MODEL": "custom/synthesis-model",
     }

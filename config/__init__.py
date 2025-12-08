@@ -19,8 +19,8 @@ __all__ = [
     "QUERY_OPTIMIZATION_FALLBACK",
     "SYNTHESIS_MODEL",
     "SYNTHESIS_FALLBACK",
-    "GOOGLE_API_KEY",
-    "GROQ_API_KEY",
+    "PRIMARY_LLM_API_KEY",
+    "SECONDARY_LLM_API_KEY",
     "TIMEOUT",
     "validate_config",
 ]

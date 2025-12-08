@@ -471,6 +471,7 @@ class QueryService:
                         self._get_ranker().rank_papers,
                         papers,
                         optimized_queries["final_rephrase"],
+                        50,  # top_k for Base+Bonus strategy
                     )
                     timing_breakdown["composite_scoring"] = (
                         time.perf_counter() - stage_start
@@ -584,12 +585,11 @@ class QueryService:
             chunks = []
             try:
                 processing_agent = self._get_processing_agent()
-                logger.info("📉 Using reduced batch_size=1 for low-memory environment")
                 state = await asyncio.to_thread(
                     processing_agent.process,
                     state,
                     embedding_model=self.embedding_model,
-                    batch_size=1,
+                    batch_size=32,
                 )
                 chunks = state.chunks or []
                 timing_breakdown["processing"] = time.perf_counter() - stage_start

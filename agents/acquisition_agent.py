@@ -32,42 +32,130 @@ class AcquisitionAgent:
     _CHUNK_SIZE = 32 * 1024
 
     async def process(self, state: State) -> State:
-        """Process finalists from State, download PDFs in parallel, and
-        update `state.passages` with successfully extracted texts.
+        """Process finalists with Base+Bonus strategy:
+        - Base: Index ALL abstracts from state.finalists
+        - Bonus: Upgrade top 5 accessible papers to full PDF text
 
-        Logs progress and timing. Only appends a critical error if zero PDFs
-        were acquired.
+        Args:
+            state: State containing finalists (List[Dict] of papers)
+
+        Returns:
+            Updated state with passages containing abstract + PDF content
 
         Example:
             agent = AcquisitionAgent()
             new_state = await agent.process(state)
         """
         if not state.finalists:
-            state.append_error("No finalists available for PDF acquisition")
+            state.append_error("No finalists available for acquisition")
             return state
 
+        TARGET_PDF_COUNT = 5
+        acquired_pdfs = 0
+        final_passages = []
+
         finalists = state.finalists
-        total = len(finalists)
-        logger.info("Starting PDF acquisition for {n} finalists", n=total)
+        logger.info(
+            "Starting Base+Bonus acquisition: {n} abstracts, target {t} PDFs",
+            n=len(finalists),
+            t=TARGET_PDF_COUNT,
+        )
 
         start_all = time.monotonic()
-        # orchestrate downloads with pooling
-        passages = await self._download_pdfs(finalists)
+        connector = TCPConnector(limit_per_host=10, limit=100)
+
+        async with aiohttp.ClientSession(connector=connector) as session:
+            for idx, paper in enumerate(finalists):
+
+                # ============================================
+                # BASE: Always create abstract passage
+                # ============================================
+                abstract_text = paper.get("abstract", "")
+
+                # Create abstract passage with full metadata preservation
+                abstract_passage = dict(paper)  # Copy all original fields
+                abstract_passage.update(
+                    {
+                        "text": abstract_text,
+                        "text_source": "abstract",
+                        "extraction_error": None,
+                    }
+                )
+                final_passages.append(abstract_passage)
+
+                # ============================================
+                # BONUS: Attempt PDF upgrade (max 5)
+                # ============================================
+                if acquired_pdfs < TARGET_PDF_COUNT and self._has_pdf_url(paper):
+                    try:
+                        logger.debug(
+                            "Attempting PDF download for paper {i}/{n}",
+                            i=idx + 1,
+                            n=len(finalists),
+                        )
+
+                        # Reuse existing _process_single method with timeout
+                        pdf_result = await asyncio.wait_for(
+                            self._process_single(paper, session),
+                            timeout=self.PER_PDF_TIMEOUT,
+                        )
+
+                        if pdf_result and pdf_result.get("text"):
+                            # PDF success - add full-text passage
+                            final_passages.append(pdf_result)
+                            acquired_pdfs += 1
+                            paper_title = paper.get("title", "Unknown")[:60]
+                            logger.info(
+                                "PDF acquired ({a}/{t}): {title}",
+                                a=acquired_pdfs,
+                                t=TARGET_PDF_COUNT,
+                                title=paper_title,
+                            )
+                        else:
+                            logger.debug(
+                                "PDF download returned empty content for paper {i}",
+                                i=idx + 1,
+                            )
+
+                    except asyncio.TimeoutError:
+                        logger.warning(
+                            "PDF download timeout for paper {i}, gracefully degrading to abstract",
+                            i=idx + 1,
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            "PDF download failed for paper {i}, gracefully degrading to abstract: {err}",
+                            i=idx + 1,
+                            err=str(e),
+                        )
+                        # Abstract already added - continue without error
+
+                elif acquired_pdfs >= TARGET_PDF_COUNT:
+                    logger.debug(
+                        "Target PDF count reached ({t}), skipping remaining PDF attempts",
+                        t=TARGET_PDF_COUNT,
+                    )
+
         elapsed = time.monotonic() - start_all
 
-        success = len(passages)
+        # Update state.passages with final results
+        new_state = state.model_copy(deep=True)
+        new_state.passages = final_passages
+
         logger.info(
-            "Acquisition complete: {s}/{t} PDFs acquired in {sec:.2f}s",
-            s=success,
-            t=total,
+            "Acquisition complete: {total} total passages ({pdfs} PDFs, {abstracts} abstracts) in {sec:.2f}s",
+            total=len(final_passages),
+            pdfs=acquired_pdfs,
+            abstracts=len(final_passages) - acquired_pdfs,
             sec=elapsed,
         )
 
-        if success == 0:
-            state.append_error("Critical: No PDFs acquired")
+        return new_state
 
-        state.update_fields(passages=passages)
-        return state
+    def _has_pdf_url(self, paper: Dict[str, Any]) -> bool:
+        """Check if paper has a PDF URL available."""
+        oa_pdf = paper.get("openAccessPdf")
+        return bool(oa_pdf and isinstance(oa_pdf, dict) and oa_pdf.get("url"))
 
     async def _download_pdfs(
         self, finalists: List[Dict[str, Any]]

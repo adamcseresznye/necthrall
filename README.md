@@ -127,8 +127,8 @@ Necthrall uses **LiteLLM** for model routing. You can configure the following in
 | Variable | Description | Required |
 | :--- | :--- | :--- |
 | `SEMANTIC_SCHOLAR_API_KEY` | For searching papers | **Yes** |
-| `GOOGLE_API_KEY` | Primary LLM (e.g., Gemini 2.0 Flash) | **Yes** |
-| `GROQ_API_KEY` | Fallback LLM (e.g., Llama 3.3) | Optional |
+| `PRIMARY_LLM_API_KEY` | Primary LLM (e.g., Gemini 2.0 Flash) | **Yes** |
+| `SECONDARY_LLM_API_KEY` | Fallback LLM (e.g., Llama 3.3) | Optional |
 -----
 
 ## 🙏 Acknowledgements
