@@ -12,8 +12,10 @@ def _clean_markdown(text: str) -> str:
 
     Removes list markers while preserving **bold** formatting.
     """
+    if not text:
+        return ""
     # Remove "* " but not "**" (bold) - match single * followed by space, not preceded by *
-    text = re.sub(r"(?<!\*)\* (?!\*)", "", text)
+    text = re.sub(r"^(\s*)[-*](?!\s)", r"\1* ", text, flags=re.MULTILINE)
     return text
 
 
@@ -47,8 +49,8 @@ def render_answer(result):
                 )
 
         # Answer text - clean up markdown and display
-        answer_text = _clean_markdown(result.answer)
-        ui.markdown(answer_text).classes("answer-text")
+        cleaned_answer = _clean_markdown(result.answer)
+        ui.markdown(result.answer, extras=["tables"]).classes("answer-text")
 
 
 def render_sources(passages):
