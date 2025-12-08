@@ -3,19 +3,10 @@
 Transforms a single user query into dual optimized outputs: a focused final_rephrase
 for passage-level semantic retrieval, and three Semantic Scholar search variants
 (primary, broad, alternative) for paper-level discovery.
-
-Usage example:
-    agent = QueryOptimizationAgent()
-    optimized = await agent.generate_dual_queries("intermittent fasting cardiovascular risks")
-    # Returns: {
-    #     "final_rephrase": "cardiovascular risks of intermittent fasting",
-    #     "primary": "intermittent fasting cardiovascular risks",
-    #     "broad": "fasting protocols health outcomes cardiovascular",
-    #     "alternative": "time-restricted eating cardiac complications"
-    # }
 """
 
 import json
+import ast  #
 from typing import Dict, Optional
 from loguru import logger
 
@@ -87,25 +78,34 @@ class QueryOptimizationAgent:
             return None
 
     def _parse_json_response(self, response: str) -> Optional[Dict]:
-        """Parse JSON response from LLM."""
+        """Parse JSON response from LLM, handling both JSON and Python-dict formats."""
+        # 1. Try strict JSON parsing first (fastest/safest)
         try:
             return json.loads(response)
         except json.JSONDecodeError:
-            # The LLM sometimes returns surrounding commentary or extra text
-            # around the JSON blob. Try to extract the first top-level JSON
-            # object by scanning for a balanced brace block and parse that.
-            try:
-                json_block = self._extract_json_block(response)
-                if json_block:
-                    parsed = json.loads(json_block)
-                    return parsed
-            except json.JSONDecodeError as e2:
-                logger.warning("Extracted JSON block parsing failed: {}", e2)
+            pass
 
-            logger.exception(
-                "JSON parsing failed: response not valid JSON or no parsable JSON block found"
-            )
+        # 2. Extract the block (handles markdown fences like ```json ... ```)
+        json_block = self._extract_json_block(response)
+        if not json_block:
+            logger.error("No JSON block found in response")
             return None
+
+        # 3. Try strict JSON parsing on the extracted block
+        try:
+            return json.loads(json_block)
+        except json.JSONDecodeError as e:
+            # 4. Fallback: Try ast.literal_eval for Python-style dicts (single quotes)
+            # This fixes "Expecting property name enclosed in double quotes"
+            try:
+                # ast.literal_eval safely evaluates a string containing a Python literal
+                return ast.literal_eval(json_block)
+            except (ValueError, SyntaxError):
+                logger.warning(
+                    "Parsing failed via both json.loads and ast.literal_eval. Error: {}",
+                    e,
+                )
+                return None
 
     def _extract_json_block(self, text: str) -> Optional[str]:
         """Extract the first balanced JSON object from text.
@@ -163,12 +163,12 @@ class QueryOptimizationAgent:
         - Optimized for Semantic Scholar's keyword matching
         - Example: "fasting protocols cardiovascular health metabolic effects time-restricted eating"
 
-        4. **alternative**: Creative reframing for Semantic Scholar discovery
-        - Purpose: Finding adjacent research areas and alternative perspectives
-        - Format: 4-10 keywords using different scientific framing
-        - Explore different angles, mechanisms, or related phenomena
-        - Optimized for Semantic Scholar's semantic understanding
-        - Example: "caloric restriction cardiac function autophagy metabolic adaptation"
+        4. **alternative**: Critical perspective and comparative search
+        - Purpose: Finding conflicting evidence, limitations, and direct comparisons to standard care.
+        - Format: 4-10 keywords focusing on "vs", "safety", "side effects", or "limitations"
+        - Action: If the topic is a treatment (e.g., "fasting"), search for risks or comparisons (e.g., "intermittent fasting vs calorie restriction safety").
+        - Optimized for: Finding the "Safety" and "Comparison" sections often missing from basic searches.
+        - Example: "intermittent fasting side effects safety long-term risks vs caloric restriction"
 
         **Semantic Scholar Query Best Practices:**
         - Use quotes for exact phrases: "red blood cell"
@@ -178,7 +178,11 @@ class QueryOptimizationAgent:
         - Match terminology commonly found in paper titles/abstracts
         - Keep PRIMARY/BROAD/ALTERNATIVE variants focused on the core topic. Avoid expanding into loosely related subtopics. 
 
-        Return ONLY valid JSON with no additional text:
+        **IMPORTANT FORMATTING RULES:**
+        - Return ONLY valid JSON.
+        - Use DOUBLE QUOTES for all keys and string values (e.g., "key": "value").
+        - Do not use single quotes.
+        - No markdown formatting or explanation text.
 
         {{
         "final_rephrase": "...",

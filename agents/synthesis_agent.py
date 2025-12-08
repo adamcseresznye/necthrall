@@ -29,20 +29,28 @@ from llama_index.core.schema import NodeWithScore
 from utils.llm_router import LLMRouter
 
 
-# Citation prompt template that enforces strict sourcing
+# Citation prompt template that enforces strict sourcing AND Consensus-style structure
 CITATION_QA_TEMPLATE = (
-    "You are an AI research assistant. Your task is to answer the user's query "
-    "using ONLY the provided context passages.\n"
+    "You are an expert research synthesizer. Your task is to generate a comprehensive, "
+    "structured answer to the user's query using ONLY the provided context passages.\n"
     "---------------------\n"
     "{context_str}\n"
     "---------------------\n"
     "Instructions:\n"
-    "1. Answer the query based ONLY on the context above.\n"
-    "2. Cite the source passage for every claim using the format [N], where N is the passage index provided in the text.\n"
-    "3. If the context does not contain the answer, say 'I cannot answer this based on the provided sources.'\n"
-    "4. Do not hallucinate external information.\n\n"
+    "1. **Structure**: Do not output a wall of text. You MUST organize your answer into these Markdown sections:\n"
+    "   - **Executive Summary**: A 2-sentence high-level overview.\n"
+    "   - **Key Findings & Mechanisms**: The primary results, explaining *how* or *why* things happen (e.g., metabolic switching).\n"
+    "   - **Comparison & Context**: How does this compare to standard approaches (e.g., vs. calorie restriction)? (If data exists).\n"
+    "   - **Safety, Limitations & Uncertainties**: Explicitly state side effects, conflicting evidence, or gaps in the research.\n"
+    "   - **Conclusion**: A final wrap-up.\n\n"
+    "2. **Formatting**: Use bullet points for readability. **Bold** key terms and important concepts.\n"
+    "3. **Strict Citation**: Cite the source passage for EVERY claim using the format [N], where N is the passage index.\n"
+    "   - Example: 'Fasting improves insulin sensitivity [1] and lowers blood pressure [2, 4].'\n"
+    "   - Place citations immediately after the specific claim, not just at the end of the sentence.\n"
+    "4. **Nuance**: Do not just list positive results. Highlight conflicts or specific conditions (e.g., 'works for men but not women').\n"
+    "5. **Constraints**: If the context is insufficient, state: 'I cannot answer this based on the provided sources.' Do not hallucinate external info.\n\n"
     "User Query: {query_str}\n"
-    "Answer: "
+    "Structured Answer: "
 )
 
 
