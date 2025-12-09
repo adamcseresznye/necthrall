@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 import tempfile
@@ -6,8 +6,7 @@ import os
 import time
 from typing import List, Dict, Any, Optional
 from loguru import logger
-import aiohttp
-from aiohttp import ClientError, TCPConnector
+from curl_cffi.requests import AsyncSession, RequestsError
 
 from models.state import State
 from utils.pdf_extractor import extract_text_from_pdf_file, PdfExtractionError
@@ -54,7 +53,7 @@ class AcquisitionAgent:
             state.append_error("No finalists available for acquisition")
             return state
 
-        TARGET_PDF_COUNT = 5
+        TARGET_PDF_COUNT = 10
         acquired_pdfs = 0
         final_passages = []
 
@@ -66,11 +65,8 @@ class AcquisitionAgent:
         )
 
         start_all = time.monotonic()
-        connector = TCPConnector(limit_per_host=10, limit=100)
 
-        async with aiohttp.ClientSession(
-            connector=connector, headers=HEADERS
-        ) as session:
+        async with AsyncSession(impersonate="chrome110", headers=HEADERS) as session:
             for idx, paper in enumerate(finalists):
 
                 # ============================================
@@ -168,16 +164,11 @@ class AcquisitionAgent:
     ) -> List[Dict[str, Any]]:
         """Download and extract PDFs for a list of finalists in parallel.
 
-        Uses an aiohttp TCPConnector for connection pooling and
+        Uses curl_cffi AsyncSession with Chrome impersonation and
         asyncio.gather(return_exceptions=True) to collect results.
         Returns a list of successful passage dicts.
         """
-        concurrency = min(10, max(1, len(finalists)))
-        connector = TCPConnector(limit_per_host=concurrency)
-
-        async with aiohttp.ClientSession(
-            connector=connector, headers=HEADERS
-        ) as session:
+        async with AsyncSession(impersonate="chrome110", headers=HEADERS) as session:
             tasks = [
                 self._process_single_with_semaphore(paper, session)
                 for paper in finalists
@@ -189,7 +180,7 @@ class AcquisitionAgent:
         return passages
 
     async def _process_single_with_semaphore(
-        self, paper: Dict[str, Any], session: aiohttp.ClientSession
+        self, paper: Dict[str, Any], session: AsyncSession
     ) -> Optional[Dict[str, Any]]:
         sem = asyncio.Semaphore(min(10, max(1, 1)))
         async with sem:
@@ -208,7 +199,7 @@ class AcquisitionAgent:
         return None
 
     async def _process_single(
-        self, paper: Dict[str, Any], session: aiohttp.ClientSession
+        self, paper: Dict[str, Any], session: AsyncSession
     ) -> Optional[Dict[str, Any]]:
         """High-level single paper processing: download then extract/validate.
 
@@ -229,7 +220,7 @@ class AcquisitionAgent:
         except asyncio.TimeoutError:
             logger.warning("Timeout while downloading PDF for {pid}", pid=paper_id)
             return None
-        except ClientError as e:
+        except RequestsError as e:
             logger.warning(
                 "HTTP/client error for {pid}: {err}", pid=paper_id, err=str(e)
             )
@@ -281,36 +272,35 @@ class AcquisitionAgent:
         return out
 
     async def _download_single_pdf(
-        self, paper_id: str, url: str, session: aiohttp.ClientSession
+        self, paper_id: str, url: str, session: AsyncSession
     ) -> str:
         """Stream-download a single PDF to a temp file and return its path.
 
-        Raises aiohttp.ClientError for network issues or returns if HTTP status
-        is non-200 (logged and raises).
+        Raises RequestsError for network issues or HTTP status >= 400.
         """
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
         tmp_path = tmp.name
         tmp.close()
 
         try:
-            async with session.get(url) as resp:
-                status = resp.status
-                if status >= 400:
-                    # log specific HTTP errors
-                    logger.warning(
-                        "HTTP {status} when fetching PDF for {pid}",
-                        status=status,
-                        pid=paper_id,
-                    )
-                    raise ClientError(f"HTTP {status}")
+            resp = await session.get(url, stream=True)
+            status = resp.status_code
+            if status >= 400:
+                # log specific HTTP errors
+                logger.warning(
+                    "HTTP {status} when fetching PDF for {pid}",
+                    status=status,
+                    pid=paper_id,
+                )
+                raise RequestsError(f"HTTP {status}")
 
-                with open(tmp_path, "wb") as fh:
-                    async for chunk in resp.content.iter_chunked(self._CHUNK_SIZE):
-                        if not chunk:
-                            continue
-                        fh.write(chunk)
+            with open(tmp_path, "wb") as fh:
+                async for chunk in resp.aiter_content(chunk_size=self._CHUNK_SIZE):
+                    if not chunk:
+                        continue
+                    fh.write(chunk)
 
-        except ClientError:
+        except RequestsError:
             # ensure file removed on failure
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
