@@ -4,21 +4,6 @@ from nicegui import ui
 from loguru import logger
 
 
-import re
-
-
-def _clean_markdown(text: str) -> str:
-    """Clean up markdown formatting for display.
-
-    Removes list markers while preserving **bold** formatting.
-    """
-    if not text:
-        return ""
-    # Remove "* " but not "**" (bold) - match single * followed by space, not preceded by *
-    text = re.sub(r"^(\s*)[-*](?!\s)", r"\1* ", text, flags=re.MULTILINE)
-    return text
-
-
 def render_loading():
     """Render the loading spinner with status text."""
     with ui.column().classes("loading-container w-full") as container:
@@ -49,8 +34,9 @@ def render_answer(result):
                 )
 
         # Answer text - clean up markdown and display
-        cleaned_answer = _clean_markdown(result.answer)
-        ui.markdown(result.answer, extras=["tables"]).classes("answer-text")
+        ui.markdown(result.answer, extras=["tables"]).classes("w-full").style(
+            "word-wrap: break-word; overflow-wrap: break-word; hyphens: auto; word-break: break-word; line-height: 1.8;"
+        )
 
 
 def render_sources(passages):

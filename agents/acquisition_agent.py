@@ -12,6 +12,10 @@ from aiohttp import ClientError, TCPConnector
 from models.state import State
 from utils.pdf_extractor import extract_text_from_pdf_file, PdfExtractionError
 
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+}
+
 
 class AcquisitionAgent:
     """State-aware async PDF acquisition agent.
@@ -64,7 +68,9 @@ class AcquisitionAgent:
         start_all = time.monotonic()
         connector = TCPConnector(limit_per_host=10, limit=100)
 
-        async with aiohttp.ClientSession(connector=connector) as session:
+        async with aiohttp.ClientSession(
+            connector=connector, headers=HEADERS
+        ) as session:
             for idx, paper in enumerate(finalists):
 
                 # ============================================
@@ -169,7 +175,9 @@ class AcquisitionAgent:
         concurrency = min(10, max(1, len(finalists)))
         connector = TCPConnector(limit_per_host=concurrency)
 
-        async with aiohttp.ClientSession(connector=connector) as session:
+        async with aiohttp.ClientSession(
+            connector=connector, headers=HEADERS
+        ) as session:
             tasks = [
                 self._process_single_with_semaphore(paper, session)
                 for paper in finalists

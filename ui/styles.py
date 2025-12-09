@@ -114,6 +114,9 @@ body {
     font-size: 1rem;
     line-height: 1.8;
     color: var(--text-primary);
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    word-break: break-word;
 }
 
 /* Markdown styling within answer */
@@ -195,6 +198,10 @@ body {
     color: var(--text-primary);
     line-height: 1.4;
     margin-bottom: 4px;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    hyphens: auto;
 }
 
 .source-meta {
@@ -327,8 +334,23 @@ a.source-link-btn:visited {
         padding: 16px;
     }
     
+    .answer-section p,
+    .answer-section li {
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+        word-break: break-word;
+    }
+    
     .source-card {
         padding: 12px;
+    }
+    
+    .source-title {
+        font-size: 0.9rem;
+    }
+    
+    .source-snippet {
+        font-size: 0.8rem;
     }
     
     .header-container {

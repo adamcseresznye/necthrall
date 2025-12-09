@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import gc
 from typing import List, Dict, Any, Optional
 import time
 from loguru import logger
@@ -70,9 +69,6 @@ class ProcessingAgent:
         loop_start = time.perf_counter()
 
         for idx, passage in enumerate(state.passages):
-            # Pre-GC: Clean up memory at the start of each iteration
-            gc.collect()
-
             paper_id = (
                 passage.get("paperId") or passage.get("paper_id") or f"paper_{idx}"
             )
@@ -169,9 +165,8 @@ class ProcessingAgent:
                 }
             )
 
-            # Memory cleanup: delete temporary variables and force garbage collection
+            # Memory cleanup: delete temporary variables
             del doc, text, nodes, markdown_nodes
-            gc.collect()
             logger.debug(f"♻️ GC called after processing paper {paper_id}")
 
         loop_end = time.perf_counter()

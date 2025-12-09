@@ -182,9 +182,14 @@ class QueryService:
         self._acquisition_agent = None
         self._processing_agent = None
         self._retriever = None
-        self._reranker = None
         self._synthesis_agent = None
         self._verifier = None
+
+        # Pre-load CrossEncoderReranker during initialization to avoid ~12s latency
+        # on first request. Import here to maintain safe DLL import order on Windows.
+        from retrieval.reranker import CrossEncoderReranker
+
+        self._reranker = CrossEncoderReranker()
 
     def _get_optimizer(self) -> QueryOptimizationAgent:
         """Lazy initialization of query optimizer."""
@@ -240,11 +245,7 @@ class QueryService:
         return self._retriever
 
     def _get_reranker(self) -> "CrossEncoderReranker":
-        """Lazy initialization of cross-encoder reranker."""
-        if self._reranker is None:
-            from retrieval.reranker import CrossEncoderReranker
-
-            self._reranker = CrossEncoderReranker()
+        """Return the pre-loaded cross-encoder reranker."""
         return self._reranker
 
     def _get_synthesis_agent(self) -> "SynthesisAgent":
