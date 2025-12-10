@@ -29,48 +29,63 @@ from llama_index.core.schema import NodeWithScore
 from utils.llm_router import LLMRouter
 
 
+FEW_SHOT_EXAMPLE = """
+User Query: cardiovascular effects of intermittent fasting
+Scientific Answer:
+### Executive Summary
+Across the available evidence, intermittent fasting (IF) is associated with modest but consistent improvements in cardiovascular risk factors. Key outcomes include reductions in body weight (approx. 4-7% [3]), modest declines in blood pressure, and acute lowering of TMAO (from 27.1 to 14.3 ng/ml [2]). However, methodological limitations, such as high attrition rates (38% in ADF trials [3]), temper definitive conclusions.
+
+### Key Findings
+* **Body Weight & BMI:** Alternate-day fasting (ADF) produced a 7% weight loss nadir at 6 months, stabilizing at 4.5% below baseline at 12 months [3].
+* **TMAO (Biomarker):** A 24-hour water-only fast reduced circulating TMAO from 27.1 ng/ml to 14.3 ng/ml (p=0.019), indicating a rapid metabolic shift [2].
+* **Lipid Profile:** IF is described to lower total cholesterol and LDL-C, though quantitative trial data varies by protocol [6][7].
+
+### Detailed Comparison
+* **Weight Loss**
+    * **Study [3]:** Randomized trial (N=not specified) compared ADF vs. daily caloric restriction. Both groups achieved ~7% loss at 6 months.
+    * **Study [12]:** Meta-analysis of RCTs (n=104 outcomes) confirmed moderate reductions in BMI for overweight adults.
+* **Inflammation**
+    * **Study [6]:** Notes reductions in systemic inflammation markers.
+    * **Study [2]:** Re-feeding after 24h fast restored baseline TMAO levels, suggesting transient effects.
+
+### Limitations & Quality of Evidence
+* **Attrition:** The 12-month ADF trial had a 38% dropout rate, potentially biasing results toward adherent participants [3].
+* **Short-Term Data:** Many metabolic changes (e.g., TMAO) were measured after a single 24h fast, limiting insight into long-term impact [2].
+"""
+
+
 CITATION_QA_TEMPLATE = (
-    "You are an expert research synthesizer with a background in statistics and methodology. "
-    "Your task is to generate a rigorous, scientifically accurate answer using ONLY the provided context passages.\n"
+    "You are a PhD-level research assistant. Your goal is to write a highly dense, rigorous synthesis. "
+    "**Longer is NOT better.** Quality is defined by information density.\n"
     "---------------------\n"
     "{context_str}\n"
     "---------------------\n\n"
     "### INSTRUCTIONS (Follow Strictly):\n"
-    "0. **Insufficient Information**: If the provided context does not contain the answer to the specific user query, state: 'The retrieved documents do not contain specific data regarding [topic].' Do not attempt to answer from general knowledge.\n\n"
-    "1. **MANDATORY CITATIONS**: You MUST cite the source passage for EVERY factual claim using the exact index provided in the text (e.g., [1]).\n"
-    "   - Place citations immediately after the specific data point (e.g., 'reduced by 20% [1]').\n"
-    "   - If a sentence contains multiple claims, cite each one separately.\n"
-    "   - **Do not output a single scientific statement without a citation.**\n\n"
-    "2. **Methodological Priority**: \n"
-    "   - Prioritize **Raw Data (Results)** and **Protocols (Methods)** over Abstract/Introduction summaries.\n"
-    "   - If available, include specific dosages, sample sizes (N=), durations, or exact chemical compositions. Do not use vague terms like 'standard protocol' if the specific details are in the text.\n\n"
-    "3. **Statistical Precision**: \n"
-    "   - Never invent p-values. If a paper says '95% CI', do not write 'p=95'.\n"
-    "   - Distinguish between 'No significant difference' (p>0.05) and 'Not tested'.\n"
-    "   - If extracting numbers, include the unit (e.g., 'ms', 'mg/dL', '% change').\n\n"
-    "4. **Contextual Nuance & Contradictions**: \n"
-    "   - If a finding contradicts general consensus, you MUST add the condition (e.g., '...in short 5-minute tasks' or '...after caffeine intake').\n"
-    "   - **Highlight Disagreements**: If [1] says 'Positive' and [2] says 'Negative', explicitly state: 'Evidence is mixed: [1] found positive effects, whereas [2] observed no change.'\n\n"
-    "5. **NO TABLES**: Do not use Markdown tables. They do not render well on mobile devices. Use structured bulleted lists instead.\n\n"
+    "1. **ADAPTIVE LENGTH STRATEGY (CRITICAL)**:\n"
+    "   - **Step 1**: Evaluate the retrieved chunks. Are they rich or sparse?\n"
+    "   - **Step 2**: If data is sparse, write a short, direct answer (e.g., 100 words). **Do not** fluff up the text to fill space.\n"
+    "   - **Step 3**: If data is rich, synthesize it concisely. Merge related findings into single dense sentences.\n\n"
+    "2. **REQUIRED SECTIONS**:\n"
+    "   - **Executive Summary**: The distilled conclusion. Maximum 200 words, but shorter is preferred if possible.\n"
+    "   - **Key Findings**: Bullet points of hard data only. If no hard numbers exist, skip this section or keep it to 1-2 points.\n"
+    "   - **Detailed Comparison**: Only include if there are distinct protocols/groups to compare. Otherwise, merge into findings.\n"
+    "   - **Methodological Limits**: Brief critique (bullet points).\n\n"
+    "3. **QUANTITATIVE ENFORCEMENT**: \n"
+    "   - Use specific numbers (p-values, N=, % change) whenever available.\n"
+    "   - WARNING: Do not invent numbers. If data is missing, write 'quantities not reported'.\n"
+    "   - Cite every claim immediately [x].\n\n"
+    "4. **FORMATTING RULES**:\n"
+    "   - **NO MARKDOWN TABLES**: Use nested bullet lists only.\n"
+    "   - **NO IMAGES**: Do not generate image tags or markdown images.\n"
+    "   - **NO PREAMBLE**: Start directly with '### Executive Summary'.\n\n"
+    "5. **ACCESSIBILITY** (optional):\n"
+    "   - Define technical terms on first use in parentheses, e.g., 'VO₂peak (maximal oxygen uptake)'.\n"
+    "   - Explain acronyms: 'coronary artery disease (CAD)'.\n\n"
     "### REQUIRED OUTPUT FORMAT:\n"
-    "You must use standard Markdown headers (###) and bullet points.\n\n"
-    "### Executive Summary\n"
-    "A high-level synthesis of the consensus and magnitude of effects. [1]\n\n"
-    "### Key Findings\n"
-    "* **Domain (e.g., Memory):** Synthesis of findings. Quantitative impact (e.g., 'reduced by 20%') [2].\n"
-    "* **Domain (e.g., Attention):** Synthesis of findings. Nuance regarding task type or population [3].\n\n"
-    "### Detailed Comparison (or Mechanism)\n"
-    "**DO NOT USE TABLES.** Use structured bullet lists to compare specific outcomes, dosages, or protocols.\n"
-    "* **Outcome/Variable 1:**\n"
-    "  * **Study [1]:** Result (e.g., 50mg dose) [1]\n"
-    "  * **Study [2]:** Result (e.g., 100mg dose) [2]\n"
-    "* **Outcome/Variable 2:**\n"
-    "  * **Study [1]:** Result [1]\n\n"
-    "### Limitations & Quality of Evidence\n"
-    "Critique the quality of the data (e.g., 'Most studies were short-term', 'Small sample sizes', 'Lack of control group'). [4]\n\n"
     "---------------------\n"
+    f"{FEW_SHOT_EXAMPLE}\n"
+    "---------------------\n\n"
     "User Query: {query_str}\n"
-    "Scientific Answer: "
 )
 
 
