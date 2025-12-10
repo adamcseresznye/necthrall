@@ -26,12 +26,12 @@ class AcquisitionAgent:
     Notes:
     - Downloads are performed in parallel (up to 10 concurrent tasks).
     - Each download+extraction is wrapped in a per-PDF timeout (class attr
-      `PER_PDF_TIMEOUT`, default 10s).
+      `PER_PDF_TIMEOUT`, default 3s).
     - Failures are logged via `logger.warning()` and skipped. Only if *all*
       PDFs fail the State will receive a critical error via `append_error()`.
     """
 
-    PER_PDF_TIMEOUT = 10.0
+    PER_PDF_TIMEOUT = 3.0
     _CHUNK_SIZE = 32 * 1024
 
     async def process(self, state: State) -> State:
@@ -53,7 +53,7 @@ class AcquisitionAgent:
             state.append_error("No finalists available for acquisition")
             return state
 
-        TARGET_PDF_COUNT = 10
+        TARGET_PDF_COUNT = 5
         acquired_pdfs = 0
         final_passages = []
 
