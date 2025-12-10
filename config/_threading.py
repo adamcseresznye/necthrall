@@ -10,20 +10,21 @@ subsequent imports (dotenv, config.py, etc.) happen after threading is configure
 
 import os
 import multiprocessing
+from loguru import logger
 
-# Determine optimal thread count
-try:
-    num_cores = multiprocessing.cpu_count()
-except Exception:
-    num_cores = 8
+# Only set defaults if not already set in environment (e.g. by Docker)
+if "OMP_NUM_THREADS" not in os.environ:
+    try:
+        num_cores = multiprocessing.cpu_count()
+    except Exception:
+        num_cores = 8
 
-# Force multi-threaded mode for CPU-bound operations
-# Must be set BEFORE importing numpy, torch, onnxruntime
-os.environ["OMP_NUM_THREADS"] = str(num_cores)
-os.environ["MKL_NUM_THREADS"] = str(num_cores)
-os.environ["TORCH_NUM_THREADS"] = str(num_cores)
+    # In a server context, usually you want this to be 1, but for local scripts
+    # you might want max cores.
+    os.environ["OMP_NUM_THREADS"] = str(num_cores)
+    os.environ["MKL_NUM_THREADS"] = str(num_cores)
+    os.environ["TORCH_NUM_THREADS"] = str(num_cores)
+
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-# Log configuration (safe to use print since logging isn't configured yet)
-_threading_info = f"⚡ Threading: {num_cores} cores configured (OMP/MKL/TORCH)"
-print(_threading_info)
+logger.info(f"⚡ Threading Config: OMP_NUM_THREADS={os.environ.get('OMP_NUM_THREADS')}")

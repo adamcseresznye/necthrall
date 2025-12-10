@@ -225,7 +225,7 @@ class QueryService:
             from agents.processing_agent import ProcessingAgent
 
             self._processing_agent = ProcessingAgent(
-                chunk_size=500,
+                chunk_size=512,
                 chunk_overlap=50,
             )
         return self._processing_agent
@@ -649,21 +649,19 @@ class QueryService:
 
                 # Use pre-computed embeddings path if all embeddings are available
                 if len(chunk_embeddings) == len(chunks):
-                    logger.info(
-                        "🚀 Using pre-computed embeddings for retrieval ({} chunks)",
-                        len(chunks),
-                    )
-                    retrieval_results = retriever.retrieve_with_embeddings(
+                    logger.info("🚀 Using pre-computed embeddings for retrieval...")
+                    # Wrap in asyncio.to_thread
+                    retrieval_results = await asyncio.to_thread(
+                        retriever.retrieve_with_embeddings,
                         query=retrieval_query,
                         chunks=chunks,
                         chunk_embeddings=chunk_embeddings,
                     )
                 else:
-                    logger.warning(
-                        "⚠️ Missing embeddings in {} chunks, falling back to re-calculation",
-                        len(chunks) - len(chunk_embeddings),
-                    )
-                    retrieval_results = retriever.retrieve(
+                    logger.warning("⚠️ Missing embeddings, falling back...")
+                    # Wrap in asyncio.to_thread
+                    retrieval_results = await asyncio.to_thread(
+                        retriever.retrieve,
                         query=retrieval_query,
                         chunks=chunks,
                     )
@@ -768,7 +766,9 @@ class QueryService:
                     stage_start = time.perf_counter()
                     try:
                         verifier = self._get_verifier()
-                        citation_verification = verifier.verify(answer, final_passages)
+                        citation_verification = await asyncio.to_thread(
+                            verifier.verify, answer, final_passages
+                        )
                         timing_breakdown["verification"] = (
                             time.perf_counter() - stage_start
                         )
