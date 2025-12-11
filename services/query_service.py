@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Dict, List, Any, Optional, TYPE_CHECKING
+from typing import Dict, List, Any, Optional, TYPE_CHECKING, Callable
 from dataclasses import dataclass, field
 from loguru import logger
 
@@ -338,7 +338,9 @@ class QueryService:
 
         return papers, quality_result
 
-    async def process_query(self, query: str) -> PipelineResult:
+    async def process_query(
+        self, query: str, progress_callback: Optional[Callable] = None
+    ) -> PipelineResult:
         """Process a user query through the complete pipeline.
 
         Stages:
@@ -355,6 +357,7 @@ class QueryService:
 
         Args:
             query: The user query string
+            progress_callback: Optional async callback to report progress
 
         Returns:
             PipelineResult with all processing results and metadata
@@ -377,8 +380,18 @@ class QueryService:
             refinement_count=0,
         )
 
+        # Helper to safely await callback
+        async def report_progress():
+            if progress_callback:
+                if asyncio.iscoroutinefunction(progress_callback):
+                    await progress_callback()
+                else:
+                    progress_callback()
+
         try:
             logger.info("Starting query pipeline for: {}", query[:100])
+
+            await report_progress()
 
             # Stage 1: Query Optimization
             logger.info("Stage 1: Query optimization - input query: {}", query[:100])
@@ -406,6 +419,7 @@ class QueryService:
                 ) from e
 
             # Stage 2 & 3: Semantic Scholar Search + Quality Gate (with refinement loop)
+            await report_progress()
             queries = [
                 optimized_queries["primary"],
                 optimized_queries["broad"],
@@ -523,6 +537,7 @@ class QueryService:
                 return result
 
             # Stage 5: PDF Acquisition
+            await report_progress()
             logger.info(
                 "🧮 Stage 5: PDF Acquisition - downloading PDFs for {} finalists",
                 len(finalists),
@@ -568,6 +583,7 @@ class QueryService:
                 return result
 
             # Stage 6: Processing & Embedding
+            await report_progress()
             logger.info(
                 "📄 Stage 6: Processing & Embedding - chunking {} passages",
                 len(passages),
@@ -727,6 +743,7 @@ class QueryService:
 
             # Stage 9: Synthesis
             if final_passages:
+                await report_progress()
                 logger.info(
                     "📝 Stage 9: Synthesis - generating answer from {} passages",
                     len(final_passages),

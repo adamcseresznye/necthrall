@@ -1,5 +1,6 @@
 """Page definitions for the Necthrall UI."""
 
+import asyncio
 from pathlib import Path
 from nicegui import ui, context, app
 from loguru import logger
@@ -11,6 +12,7 @@ from ui.components import (
     render_sources,
     render_error,
     render_exception_error,
+    SearchProgress,
 )
 from ui.policies import PRIVACY_POLICY, TERMS_OF_SERVICE
 from ui.constants import POSTHOG_SCRIPT, BUY_ME_COFFEE_WIDGET
@@ -140,67 +142,26 @@ def init_ui(fastapi_app):
                     # Client deleted, exit gracefully
                     return
 
-            # Hide example queries
-            if example_queries_row:
-                try:
-                    example_queries_row.set_visibility(False)
-                except RuntimeError:
-                    pass
+            # Hide search container to focus on progress
+            if search_container_ui:
+                search_container_ui.set_visibility(False)
 
-            # Show loading
-
-            # --- START: Enhanced Loading UI ---
-            loading_timer = None
+            # Show progress stepper
+            progress_ui = None
             with results_container:
-                with ui.column().classes(
-                    "w-full items-center justify-center py-12 gap-6"
-                ):
-                    # 1. Modern Ring Spinner
-                    ui.spinner("rings", size="4rem", color="primary").props(
-                        "thickness=4"
-                    )
+                progress_ui = SearchProgress()
 
-                    # 2. Cycling Status Message
-                    status_label = ui.label("Initiating research scan...").classes(
-                        "text-xl text-slate-600 font-medium animate-pulse text-center"
-                    )
-
-                    # 3. Tip (responsive)
-                    ui.label(
-                        "This may take 30-60 seconds. We are reading real papers. Please do not close this tab."
-                    ).classes(
-                        "text-sm md:text-base lg:text-lg text-slate-400 italic text-center max-w-xl mx-auto"
-                    )
-
-                # Simulated progress steps
-                messages = [
-                    "Refining your research question...",
-                    "Reading metadata from 200M+ papers...",
-                    "Filtering for high-impact studies...",
-                    "Downloading full-text documents...",
-                    "Reading and analyzing paper content...",
-                    "Isolating key evidence and data...",
-                    "Cross-referencing claims against sources...",
-                    "Drafting the final response...",
-                    "Double-checking citation links...",
-                    "Finalizing your research summary...",
-                    "Almost ready...",
-                ]
-                msg_idx = 0
-
-                def update_progress():
-                    nonlocal msg_idx
-                    if msg_idx < len(messages):
-                        status_label.set_text(messages[msg_idx])
-                        msg_idx = (msg_idx + 1) % len(messages)
-
-                # Update text every 2.5 seconds
-                loading_timer = ui.timer(2.5, update_progress)
-            # --- END: Enhanced Loading UI ---
+            # Async callback to ensure UI updates
+            async def advance_progress():
+                progress_ui.next_step()
+                # Force UI update by yielding control
+                await asyncio.sleep(0)
 
             try:
-                # Call the query service
-                result = await fastapi_app.state.query_service.process_query(query_text)
+                # Call the query service with progress callback
+                result = await fastapi_app.state.query_service.process_query(
+                    query_text, progress_callback=advance_progress
+                )
 
                 # Check if client is still connected before updating UI
                 if not is_connected():
@@ -215,6 +176,14 @@ def init_ui(fastapi_app):
                 except RuntimeError:
                     # Client was deleted, silently ignore
                     return
+
+                # Restore search container
+                if search_container_ui:
+                    search_container_ui.set_visibility(True)
+
+                # Ensure example queries remain hidden after search
+                if example_queries_row:
+                    example_queries_row.set_visibility(False)
 
                 with results_container:
                     if result.success and result.answer:
@@ -282,15 +251,13 @@ def init_ui(fastapi_app):
                     return
                 try:
                     results_container.clear()
+                    if search_container_ui:
+                        search_container_ui.set_visibility(True)
                     with results_container:
                         render_exception_error(e)
                 except RuntimeError:
                     # Client was deleted, silently ignore
                     pass
-            finally:
-                # Clean up the timer to prevent errors
-                if loading_timer:
-                    loading_timer.cancel()
 
         # =====================================================================
         # HEADER
@@ -334,7 +301,7 @@ def init_ui(fastapi_app):
                     )
             # --- HERO SECTION END ---
             # Search container
-            with ui.column().classes("search-container"):
+            with ui.column().classes("search-container") as search_container_ui:
                 # Search wrapper
                 with ui.row().classes("search-wrapper w-full items-center gap-2"):
                     ui.icon("search", size="sm").classes("text-slate-400 ml-3")
@@ -371,116 +338,110 @@ def init_ui(fastapi_app):
                             on_click=lambda e=example: set_example(e),
                         ).props("flat dense").classes("example-btn")
 
-                # Results container
-                results_container = ui.column().classes("w-full mt-6")
+            # Results container
+            results_container = ui.column().classes("w-full max-w-4xl mt-6")
 
-                # Attempt to restore cached result from localStorage on page load
-                def restore_cached_result():
-                    """Restore result from localStorage if available."""
-                    try:
-                        import json
+            # Attempt to restore cached result from localStorage on page load
+            def restore_cached_result():
+                """Restore result from localStorage if available."""
+                try:
+                    import json
 
-                        # Retrieve cached result from localStorage
-                        cached_json = ui.run_javascript(
-                            "localStorage.getItem('necthrall_last_result')", timeout=5
-                        )
-                        if cached_json:
-                            cached_data = json.loads(cached_json)
-                            search_input.value = cached_data.get("query", "")
+                    # Retrieve cached result from localStorage
+                    cached_json = ui.run_javascript(
+                        "localStorage.getItem('necthrall_last_result')", timeout=5
+                    )
+                    if cached_json:
+                        cached_data = json.loads(cached_json)
+                        search_input.value = cached_data.get("query", "")
 
-                            # Populate the results container
-                            with results_container:
-                                # Render answer
-                                with ui.column().classes("answer-section w-full"):
-                                    with ui.row().classes("items-center gap-3 mb-4"):
-                                        with ui.row().classes("gap-2"):
-                                            ui.label(
-                                                f"⏱️ {cached_data['execution_time']:.1f}s"
-                                            ).classes("stats-badge")
-                                            ui.label(
-                                                f"📄 {cached_data['finalists']} papers analyzed"
-                                            ).classes("stats-badge")
-                                            ui.label(
-                                                f"📝 {len(cached_data['passages'])} sources cited"
-                                            ).classes("stats-badge")
+                        # Populate the results container
+                        with results_container:
+                            # Render answer
+                            with ui.column().classes("answer-section w-full"):
+                                with ui.row().classes("items-center gap-3 mb-4"):
+                                    with ui.row().classes("gap-2"):
+                                        ui.label(
+                                            f"⏱️ {cached_data['execution_time']:.1f}s"
+                                        ).classes("stats-badge")
+                                        ui.label(
+                                            f"📄 {cached_data['finalists']} papers analyzed"
+                                        ).classes("stats-badge")
+                                        ui.label(
+                                            f"📝 {len(cached_data['passages'])} sources cited"
+                                        ).classes("stats-badge")
 
-                                ui.markdown(cached_data["answer"]).classes(
-                                    "answer-text"
-                                )
+                            ui.markdown(cached_data["answer"]).classes("answer-text")
 
-                                # Render sources
-                                if cached_data["passages"]:
-                                    with ui.column().classes("sources-section w-full"):
-                                        ui.label("SOURCES CITED").classes(
-                                            "sources-title"
-                                        )
+                            # Render sources
+                            if cached_data["passages"]:
+                                with ui.column().classes("sources-section w-full"):
+                                    ui.label("SOURCES CITED").classes("sources-title")
 
-                                        for idx, passage in enumerate(
-                                            cached_data["passages"]
+                                    for idx, passage in enumerate(
+                                        cached_data["passages"]
+                                    ):
+                                        with (
+                                            ui.expansion()
+                                            .classes("source-card")
+                                            .props("dense") as expansion
                                         ):
-                                            with (
-                                                ui.expansion()
-                                                .classes("source-card")
-                                                .props("dense") as expansion
-                                            ):
-                                                with expansion.add_slot("header"):
-                                                    with ui.column().classes("w-full"):
-                                                        ui.label(
-                                                            passage["title"]
-                                                        ).classes("source-title")
+                                            with expansion.add_slot("header"):
+                                                with ui.column().classes("w-full"):
+                                                    ui.label(passage["title"]).classes(
+                                                        "source-title"
+                                                    )
 
-                                                        meta_parts = []
-                                                        if passage["section"]:
-                                                            meta_parts.append(
-                                                                passage["section"]
-                                                            )
+                                                    meta_parts = []
+                                                    if passage["section"]:
                                                         meta_parts.append(
-                                                            f"Citation [{idx + 1}]"
+                                                            passage["section"]
                                                         )
-                                                        ui.label(
-                                                            " • ".join(meta_parts)
-                                                        ).classes("source-meta")
-
-                                                        if passage["url"]:
-                                                            with ui.row().classes(
-                                                                "items-center mt-2"
-                                                            ):
-                                                                with (
-                                                                    ui.element("a")
-                                                                    .props(
-                                                                        f'href="{passage["url"]}" target="_blank"'
-                                                                    )
-                                                                    .classes(
-                                                                        "source-link-btn"
-                                                                    )
-                                                                ):
-                                                                    ui.label(
-                                                                        "📄 Open Access PDF"
-                                                                    )
-                                                        else:
-                                                            with ui.row().classes(
-                                                                "items-center mt-2"
-                                                            ):
-                                                                ui.html(
-                                                                    '<span class="source-link-badge">📄 PDF not available</span>',
-                                                                    sanitize=False,
-                                                                )
-
-                                                with ui.column().classes(
-                                                    "passage-content"
-                                                ):
+                                                    meta_parts.append(
+                                                        f"Citation [{idx + 1}]"
+                                                    )
                                                     ui.label(
-                                                        passage["content"]
-                                                    ).classes("source-snippet")
+                                                        " • ".join(meta_parts)
+                                                    ).classes("source-meta")
 
-                            logger.info(
-                                f"✅ Restored cached result for query: {cached_data['query']}"
-                            )
-                    except Exception as e:
-                        logger.debug(f"No cached result to restore: {e}")
+                                                    if passage["url"]:
+                                                        with ui.row().classes(
+                                                            "items-center mt-2"
+                                                        ):
+                                                            with (
+                                                                ui.element("a")
+                                                                .props(
+                                                                    f'href="{passage["url"]}" target="_blank"'
+                                                                )
+                                                                .classes(
+                                                                    "source-link-btn"
+                                                                )
+                                                            ):
+                                                                ui.label(
+                                                                    "📄 Open Access PDF"
+                                                                )
+                                                    else:
+                                                        with ui.row().classes(
+                                                            "items-center mt-2"
+                                                        ):
+                                                            ui.html(
+                                                                '<span class="source-link-badge">📄 PDF not available</span>',
+                                                                sanitize=False,
+                                                            )
 
-                # Run restoration on page load
-                ui.timer(0.5, restore_cached_result, once=True)
+                                            with ui.column().classes("passage-content"):
+                                                ui.label(passage["content"]).classes(
+                                                    "source-snippet"
+                                                )
+
+                        logger.info(
+                            f"✅ Restored cached result for query: {cached_data['query']}"
+                        )
+                except Exception as e:
+                    logger.debug(f"No cached result to restore: {e}")
+
+            # Run restoration on page load
+            ui.timer(0.5, restore_cached_result, once=True)
 
         # =====================================================================
         # FOOTER (centered)

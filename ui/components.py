@@ -133,3 +133,50 @@ def render_exception_error(exception: Exception):
         ui.icon("error_outline", color="#ef4444", size="sm")
         ui.label("Error").classes("text-lg font-semibold text-red-600")
         ui.label(str(exception)).classes("text-red-500 mt-2")
+
+
+class SearchProgress:
+    """Vertical stepper to visualize search progress."""
+
+    def __init__(self):
+        with ui.column().classes("w-full items-center"):
+            with ui.card().classes(
+                "w-full max-w-md p-6 shadow-lg border border-slate-100"
+            ):
+                ui.label("Researching...").classes(
+                    "text-xl font-bold text-slate-700 mb-4 text-center w-full"
+                )
+                self.stepper = (
+                    ui.stepper().props("vertical animated flat").classes("w-full")
+                )
+                with self.stepper:
+                    with ui.step("Refining Query"):
+                        ui.label("Clarifying your research question...").classes(
+                            "text-slate-600"
+                        )
+
+                    with ui.step("Searching Sources"):
+                        ui.label("Scanning millions of open-access papers...").classes(
+                            "text-slate-600"
+                        )
+
+                    with ui.step("Reading Documents"):
+                        with ui.column().classes("gap-2"):
+                            ui.label(
+                                "Downloading and reading full-text PDFs..."
+                            ).classes("text-slate-600")
+                            ui.spinner("dots", size="lg", color="primary")
+
+                    with ui.step("Analyzing Data"):
+                        ui.label("Extracting key evidence and citations...").classes(
+                            "text-slate-600"
+                        )
+
+                    with ui.step("Writing Answer"):
+                        ui.label("Drafting your cited summary...").classes(
+                            "text-slate-600"
+                        )
+
+    def next_step(self):
+        """Advance to the next step."""
+        self.stepper.next()
