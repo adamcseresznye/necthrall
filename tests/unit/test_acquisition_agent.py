@@ -29,16 +29,16 @@ class MockContent:
         self._delay = delay_per_chunk
         self._chunk_size = chunk_size
 
-    async def iter_chunked(self, n):
-        for i in range(0, len(self._data), n):
-            if self._delay:
+    async def aiter_content(self, chunk_size=1024):
+        for i in range(0, len(self._data), chunk_size):
+            if self._delay > 0:
                 await asyncio.sleep(self._delay)
-            yield self._data[i : i + n]
+            yield self._data[i : i + chunk_size]
 
 
 class MockResponse:
     def __init__(self, status: int, data: bytes = b"", delay_per_chunk: float = 0.0):
-        self.status = status
+        self.status_code = status
         self.content = MockContent(data, delay_per_chunk=delay_per_chunk)
 
     async def __aenter__(self):
@@ -46,6 +46,9 @@ class MockResponse:
 
     async def __aexit__(self, exc_type, exc, tb):
         return False
+
+    def aiter_content(self, chunk_size=1024):
+        return self.content.aiter_content(chunk_size)
 
 
 class MockSession:
@@ -59,7 +62,7 @@ class MockSession:
     async def __aexit__(self, exc_type, exc, tb):
         return False
 
-    def get(self, url, *args, **kwargs):
+    async def get(self, url, *args, **kwargs):
         entry = self._map.get(url)
         if entry is None:
             raise RuntimeError("No mapping for URL")
@@ -78,7 +81,9 @@ async def test_acquisition_enriches_state_success(monkeypatch):
     async def session_factory(*args, **kwargs):
         return MockSession(mapping)
 
-    monkeypatch.setattr("aiohttp.ClientSession", lambda *a, **k: MockSession(mapping))
+    monkeypatch.setattr(
+        "agents.acquisition_agent.AsyncSession", lambda *a, **k: MockSession(mapping)
+    )
 
     state = State(
         query="q",
@@ -107,7 +112,9 @@ async def test_acquisition_timeout_skips(monkeypatch):
     url = "https://example.com/slow.pdf"
     mapping = {url: (200, data, 0.2)}
 
-    monkeypatch.setattr("aiohttp.ClientSession", lambda *a, **k: MockSession(mapping))
+    monkeypatch.setattr(
+        "agents.acquisition_agent.AsyncSession", lambda *a, **k: MockSession(mapping)
+    )
 
     state = State(
         query="q",
@@ -129,7 +136,9 @@ async def test_acquisition_http_404_skips(monkeypatch):
     url = "https://example.com/notfound.pdf"
     mapping = {url: (404, b"", 0.0)}
 
-    monkeypatch.setattr("aiohttp.ClientSession", lambda *a, **k: MockSession(mapping))
+    monkeypatch.setattr(
+        "agents.acquisition_agent.AsyncSession", lambda *a, **k: MockSession(mapping)
+    )
 
     state = State(
         query="q",
@@ -152,7 +161,9 @@ async def test_acquisition_malformed_pdf_skips(monkeypatch):
     url = "https://example.com/bad.pdf"
     mapping = {url: (200, b"not-a-pdf", 0.0)}
 
-    monkeypatch.setattr("aiohttp.ClientSession", lambda *a, **k: MockSession(mapping))
+    monkeypatch.setattr(
+        "curl_cffi.requests.AsyncSession", lambda *a, **k: MockSession(mapping)
+    )
 
     state = State(
         query="q",
@@ -175,7 +186,9 @@ async def test_acquisition_zero_successes_appends_error(monkeypatch):
     # all 404 -> no successes -> state.errors contains critical message
     urls = [f"https://example.com/n{i}.pdf" for i in range(3)]
     mapping = {u: (404, b"", 0.0) for u in urls}
-    monkeypatch.setattr("aiohttp.ClientSession", lambda *a, **k: MockSession(mapping))
+    monkeypatch.setattr(
+        "agents.acquisition_agent.AsyncSession", lambda *a, **k: MockSession(mapping)
+    )
 
     finalists = [
         {"paperId": f"n{i}", "title": "T", "openAccessPdf": {"url": urls[i]}}
@@ -208,7 +221,9 @@ async def test_acquisition_get_raises_timeout(monkeypatch):
         def get(self, url, *args, **kwargs):
             raise asyncio.TimeoutError()
 
-    monkeypatch.setattr("aiohttp.ClientSession", lambda *a, **k: RaisingSession())
+    monkeypatch.setattr(
+        "agents.acquisition_agent.AsyncSession", lambda *a, **k: RaisingSession()
+    )
 
     state = State(
         query="q",
@@ -243,7 +258,9 @@ async def test_acquisition_parallel_10_with_2_failures(monkeypatch):
         else:
             mapping[u] = (200, fast_bytes, 0.2)
 
-    monkeypatch.setattr("aiohttp.ClientSession", lambda *a, **k: MockSession(mapping))
+    monkeypatch.setattr(
+        "agents.acquisition_agent.AsyncSession", lambda *a, **k: MockSession(mapping)
+    )
 
     finalists = [
         {"paperId": f"p{i}", "title": "T", "openAccessPdf": {"url": urls[i]}}

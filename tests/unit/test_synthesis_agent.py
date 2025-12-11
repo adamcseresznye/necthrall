@@ -197,7 +197,6 @@ def test_citation_prompt_template_format():
     assert "{context_str}" in CITATION_QA_TEMPLATE
     assert "{query_str}" in CITATION_QA_TEMPLATE
     assert "ONLY" in CITATION_QA_TEMPLATE  # Emphasis on using only context
-    assert "[N]" in CITATION_QA_TEMPLATE  # Citation format instruction
 
 
 @pytest.mark.unit

@@ -29,7 +29,7 @@ pinned: false
 - **🛡️ Privacy First:** Completely stateless. No database, no user accounts, no history.
 - **🔍 Deep Search:** Queries **Semantic Scholar** to find hundreds of candidates per query, filtered down to the top 10 most relevant open-access papers.
 - **✅ Verifiable:** Every sentence is backed by an inline citation `[1]` that links directly to the source passage.
-- **🧠 Resilient:** Built on **LiteLLM**, Necthrall prioritizes **Google Gemini** for synthesis, automatically switching to **Groq** if the primary model is unavailable or fails.
+- **🧠 Resilient:** Built on **LiteLLM**, Necthrall prioritizes **Cerebras** for synthesis, automatically switching to **Groq** if the primary model is unavailable or fails.
 
 ---
 
@@ -86,7 +86,7 @@ graph TD
 
   * Python 3.11+
   * [Semantic Scholar API Key](https://www.semanticscholar.org/product/api) (Free)
-  * LLM Provider Key (Google Gemini or Groq)
+  * LLM Provider Key (Cerebras or Groq)
 
 ### Local Development
 
@@ -127,7 +127,7 @@ Necthrall uses **LiteLLM** for model routing. You can configure the following in
 | Variable | Description | Required |
 | :--- | :--- | :--- |
 | `SEMANTIC_SCHOLAR_API_KEY` | For searching papers | **Yes** |
-| `PRIMARY_LLM_API_KEY` | Primary LLM (e.g., Gemini 2.0 Flash) | **Yes** |
+| `PRIMARY_LLM_API_KEY` | Primary LLM (e.g., Llama 3.3) | **Yes** |
 | `SECONDARY_LLM_API_KEY` | Fallback LLM (e.g., Llama 3.3) | Optional |
 -----
 

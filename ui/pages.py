@@ -4,6 +4,7 @@ import asyncio
 from pathlib import Path
 from nicegui import ui, context, app
 from loguru import logger
+import datetime
 
 from ui.styles import CUSTOM_CSS
 from ui.components import (
@@ -451,9 +452,9 @@ def init_ui(fastapi_app):
         ):
             # Center everything on all sizes: branding and links stacked and centered
             with ui.column().classes("w-full items-center gap-2 text-center"):
-                ui.label("© 2025 Necthrall AI. Research responsibly.").classes(
-                    "font-bold"
-                )
+                ui.label(
+                    f"© {str(datetime.date.today().year)} Necthrall. Research responsibly."
+                ).classes("font-bold")
                 ui.label(
                     "AI can make mistakes. Always verify important citations."
                 ).classes("italic text-sm break-words max-w-full px-4")

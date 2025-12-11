@@ -1,9 +1,12 @@
 import pytest
+import tempfile
+import os
 
 import fitz
 
 from utils.pdf_extractor import (
-    extract_text_from_pdf,
+    extract_text_from_pdf_file,
+    PdfExtractionError,
     CorruptedPDFError,
     EmptyPDFError,
     InsufficientTextError,
@@ -26,20 +29,30 @@ def make_pdf_bytes(pages: int = 3, long: bool = True) -> bytes:
 @pytest.mark.unit
 def test_extract_valid_pdf():
     pdf_bytes = make_pdf_bytes(pages=5, long=True)
-    text = extract_text_from_pdf(pdf_bytes, paper_id="test123")
-
-    assert isinstance(text, str)
-    assert len(text) >= 500
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        tmp.write(pdf_bytes)
+        tmp_path = tmp.name
+    try:
+        text = extract_text_from_pdf_file(tmp_path)
+        assert isinstance(text, str)
+        assert len(text) >= 500
+    finally:
+        os.unlink(tmp_path)
 
 
 @pytest.mark.unit
 def test_extract_produces_markdown_structure():
     """Test that PyMuPDF4LLM produces Markdown with potential headers."""
     pdf_bytes = make_pdf_bytes(pages=3, long=True)
-    text = extract_text_from_pdf(pdf_bytes, paper_id="markdown_test")
-
-    # PyMuPDF4LLM may add Markdown formatting
-    # At minimum, we should get structured text
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        tmp.write(pdf_bytes)
+        tmp_path = tmp.name
+    try:
+        text = extract_text_from_pdf_file(tmp_path)
+        # PyMuPDF4LLM may add Markdown formatting
+        # At minimum, we should get structured text
+    finally:
+        os.unlink(tmp_path)
     assert isinstance(text, str)
     assert len(text) >= 500
     # Note: Exact Markdown format depends on PDF structure
@@ -49,9 +62,14 @@ def test_extract_produces_markdown_structure():
 @pytest.mark.unit
 def test_corrupted_pdf_raises_error():
     corrupted_bytes = b"not-a-pdf"
-    with pytest.raises(CorruptedPDFError) as exc:
-        extract_text_from_pdf(corrupted_bytes, paper_id="bad1")
-    assert "bad1" in str(exc.value)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        tmp.write(corrupted_bytes)
+        tmp_path = tmp.name
+    try:
+        with pytest.raises(PdfExtractionError):
+            extract_text_from_pdf_file(tmp_path)
+    finally:
+        os.unlink(tmp_path)
 
 
 @pytest.mark.unit
@@ -61,18 +79,28 @@ def test_empty_pdf_raises_error():
     doc = fitz.open()
     doc.new_page()
     empty_bytes = doc.write()
-    with pytest.raises(InsufficientTextError) as exc:
-        extract_text_from_pdf(empty_bytes, paper_id="empty1", min_length=500)
-    assert "empty1" in str(exc.value)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        tmp.write(empty_bytes)
+        tmp_path = tmp.name
+    try:
+        with pytest.raises(InsufficientTextError):
+            extract_text_from_pdf_file(tmp_path, min_length=500)
+    finally:
+        os.unlink(tmp_path)
 
 
 @pytest.mark.unit
 def test_insufficient_text_raises_error():
     short_pdf = make_pdf_bytes(pages=1, long=False)
-    with pytest.raises(InsufficientTextError) as exc:
-        extract_text_from_pdf(short_pdf, paper_id="short1", min_length=500)
-    assert "Insufficient text" in str(exc.value)
-    assert "short1" in str(exc.value)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        tmp.write(short_pdf)
+        tmp_path = tmp.name
+    try:
+        with pytest.raises(InsufficientTextError) as exc:
+            extract_text_from_pdf_file(tmp_path, min_length=500)
+        assert "Extracted text too short" in str(exc.value)
+    finally:
+        os.unlink(tmp_path)
 
 
 @pytest.mark.unit
@@ -103,13 +131,18 @@ def test_password_protected_pdf_raises_corrupted_error():
     if encrypted_bytes is None:
         pytest.skip("Could not produce encrypted PDF bytes in this environment")
 
-    # If bytes are encrypted, we expect a CorruptedPDFError (treat encryption as unreadable)
+    # If bytes are encrypted, we expect a PdfExtractionError (treat encryption as unreadable)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        tmp.write(encrypted_bytes)
+        tmp_path = tmp.name
     try:
-        with pytest.raises(CorruptedPDFError) as exc:
-            extract_text_from_pdf(encrypted_bytes, paper_id="enc1")
-        assert "enc1" in str(exc.value)
-    except AssertionError:
-        # If the environment didn't actually encrypt the bytes, allow the test to
-        # assert the extractor can extract text instead.
-        text = extract_text_from_pdf(encrypted_bytes, paper_id="enc1")
-        assert isinstance(text, str)
+        try:
+            with pytest.raises(PdfExtractionError):
+                extract_text_from_pdf_file(tmp_path)
+        except AssertionError:
+            # If the environment didn't actually encrypt the bytes, allow the test to
+            # assert the extractor can extract text instead.
+            text = extract_text_from_pdf_file(tmp_path)
+            assert isinstance(text, str)
+    finally:
+        os.unlink(tmp_path)
