@@ -167,7 +167,7 @@ def init_ui(fastapi_app):
 
                     # 3. Tip (responsive)
                     ui.label(
-                        "This may take 15-30 seconds. We are reading real papers. Please do not close this tab."
+                        "This may take 30-60 seconds. We are reading real papers. Please do not close this tab."
                     ).classes(
                         "text-sm md:text-base lg:text-lg text-slate-400 italic text-center max-w-xl mx-auto"
                     )
