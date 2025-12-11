@@ -285,10 +285,10 @@ def init_ui(fastapi_app):
         # MAIN CONTENT
         # =====================================================================
         with ui.column().classes("w-full items-center px-4 py-8"):
-            with ui.column().classes("w-full items-center px-4 py-8"):
+            with ui.column().classes("w-full items-center px-4"):
 
                 # --- HERO SECTION START ---
-                with ui.column().classes("items-center w-full text-center mb-8"):
+                with ui.column().classes("items-center w-full text-center mb-4"):
                     # The Slogan / Main Title
                     ui.label("Science, Distilled.").classes(
                         "text-4xl md:text-5xl font-extrabold text-slate-800 drop-shadow-lg shadow-primary/50 mb-3 tracking-tight"
@@ -339,7 +339,7 @@ def init_ui(fastapi_app):
                         ).props("flat dense").classes("example-btn")
 
             # Results container
-            results_container = ui.column().classes("w-full max-w-4xl mt-6")
+            results_container = ui.column().classes("w-full max-w-4xl mt-2")
 
             # Attempt to restore cached result from localStorage on page load
             def restore_cached_result():

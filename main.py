@@ -122,7 +122,7 @@ init_ui(app)
 # Mount NiceGUI with FastAPI
 ui.run_with(
     app,
-    title="Nechtrall",
+    title="Nechtrall - Science, Distilled.",
     favicon="logo/favicon.png",
     dark=False,
     reconnect_timeout=30.0,
