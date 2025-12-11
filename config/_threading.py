@@ -19,8 +19,8 @@ if "OMP_NUM_THREADS" not in os.environ:
     except Exception:
         num_cores = 8
 
-    # In a server context, usually you want this to be 1, but for local scripts
-    # you might want max cores.
+    # In a server context, usually we want this to be 1, but for local scripts
+    # we might want max cores.
     os.environ["OMP_NUM_THREADS"] = str(num_cores)
     os.environ["MKL_NUM_THREADS"] = str(num_cores)
     os.environ["TORCH_NUM_THREADS"] = str(num_cores)

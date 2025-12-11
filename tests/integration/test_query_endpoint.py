@@ -1,6 +1,6 @@
 """Integration tests for the /query endpoint.
 
-Tests the complete Week 1 pipeline: query_optimization → semantic_scholar_search → quality_gate → composite_scoring.
+Tests the pipeline: query_optimization → semantic_scholar_search → quality_gate → composite_scoring.
 Covers success paths, quality gate failures, and various error scenarios.
 """
 

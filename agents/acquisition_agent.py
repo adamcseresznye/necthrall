@@ -159,45 +159,6 @@ class AcquisitionAgent:
         oa_pdf = paper.get("openAccessPdf")
         return bool(oa_pdf and isinstance(oa_pdf, dict) and oa_pdf.get("url"))
 
-    async def _download_pdfs(
-        self, finalists: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
-        """Download and extract PDFs for a list of finalists in parallel.
-
-        Uses curl_cffi AsyncSession with Chrome impersonation and
-        asyncio.gather(return_exceptions=True) to collect results.
-        Returns a list of successful passage dicts.
-        """
-        async with AsyncSession(impersonate="chrome110", headers=HEADERS) as session:
-            tasks = [
-                self._process_single_with_semaphore(paper, session)
-                for paper in finalists
-            ]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        # filter successful dicts
-        passages = [r for r in results if isinstance(r, dict)]
-        return passages
-
-    async def _process_single_with_semaphore(
-        self, paper: Dict[str, Any], session: AsyncSession
-    ) -> Optional[Dict[str, Any]]:
-        sem = asyncio.Semaphore(min(10, max(1, 1)))
-        async with sem:
-            try:
-                return await asyncio.wait_for(
-                    self._process_single(paper, session), timeout=self.PER_PDF_TIMEOUT
-                )
-            except asyncio.TimeoutError:
-                pid = paper.get("paperId") or paper.get("id") or "unknown"
-                logger.warning("Timeout downloading/extracting PDF for {pid}", pid=pid)
-            except Exception as e:
-                pid = paper.get("paperId") or paper.get("id") or "unknown"
-                logger.warning(
-                    "Unhandled error for paper {pid}: {err}", pid=pid, err=str(e)
-                )
-        return None
-
     async def _process_single(
         self, paper: Dict[str, Any], session: AsyncSession
     ) -> Optional[Dict[str, Any]]:

@@ -81,7 +81,7 @@ def validate_config() -> None:
         },
         "PRIMARY_LLM_API_KEY": {
             "value": PRIMARY_LLM_API_KEY,
-            "help": "Get free key at https://ai.google.dev/",
+            "help": "Get free key at https://www.cerebras.ai/",
         },
         "SECONDARY_LLM_API_KEY": {
             "value": SECONDARY_LLM_API_KEY,

@@ -34,7 +34,6 @@ def validate_quality(
     Args:
         papers: List of paper dictionaries from Semantic Scholar API.
         query_embedding: 384 or 768-dimensional SPECTER/SPECTER2 embedding of the original query.
-                        Optional for Week 1 (semantic similarity check skipped).
 
     Returns:
         Dict with keys:
@@ -90,7 +89,6 @@ def _validate_inputs(papers: List[Dict], query_embedding: np.ndarray | None) -> 
         if "paperId" not in paper:
             raise ValueError(f"paper at index {i} missing required 'paperId' field")
 
-    # Query embedding is optional for Week 1
     if query_embedding is not None:
         if not isinstance(query_embedding, np.ndarray):
             raise TypeError("query_embedding must be a numpy array")
@@ -148,8 +146,6 @@ def _check_thresholds(metrics: Dict) -> Tuple[bool, str]:
     """Check metrics against quality thresholds and return pass/fail with reason."""
     thresholds = {
         "paper_count": (25, "insufficient paper count ({value} < {threshold})"),
-        # Week 1: embedding_coverage set to 0 since we don't have local embedding model
-        # Week 2+: will increase to 0.6 when using local embeddings for passages
         "embedding_coverage": (
             0.0,
             "low embedding coverage ({value:.2%} < {threshold:.0%})",

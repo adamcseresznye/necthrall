@@ -74,13 +74,13 @@ def test_insufficient_paper_count_fails(
 def test_low_embedding_coverage_fails(
     sample_query_embedding, mock_paper_with_all_fields, mock_paper_missing_embedding
 ):
-    """Test case 3: Low embedding coverage (Week 1: threshold=0.0, should pass)."""
+    """Test case 3: Low embedding coverage (threshold=0.0, should pass)."""
     papers = [mock_paper_with_all_fields] * 10  # 10 with embeddings
     papers.extend([mock_paper_missing_embedding] * 20)  # 20 without, total 30
 
     result = validate_quality(papers, sample_query_embedding)
 
-    # Week 1: embedding_coverage threshold is 0.0, so any coverage passes
+    # embedding_coverage threshold is 0.0, so any coverage passes
     assert result["passed"] is True
     assert result["metrics"]["embedding_coverage"] == 10 / 30
 
@@ -90,7 +90,7 @@ def test_low_median_similarity_fails(sample_query_embedding):
     """Test case 4: Low median similarity (<0.75) fails with appropriate reason."""
     # Create papers with low similarity embeddings (opposite to query)
     # The current quality gate implementation does not compute median similarity
-    # as part of the Week 1 checks; it only validates counts/coverage. Create
+    # as part of the checks; it only validates counts/coverage. Create
     # low-similarity embeddings but expect the function to still validate
     # against paper count and coverage thresholds only.
     low_sim_embedding = -sample_query_embedding + np.random.rand(384) * 0.1
@@ -124,7 +124,6 @@ def test_missing_fields_handled_gracefully(
     assert result["metrics"]["paper_count"] == 30
     assert result["metrics"]["embedding_coverage"] == 15 / 30  # Half have embeddings
     assert result["metrics"]["abstract_coverage"] == 15 / 30  # Half have abstracts
-    # No median similarity metric in Week 1 implementation
 
 
 @pytest.mark.unit

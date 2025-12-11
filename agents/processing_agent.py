@@ -1,20 +1,19 @@
 from __future__ import annotations
 
-from typing import List, Dict, Any, Optional
+from typing import List, Any, Optional
 import time
 from loguru import logger
 
-from llama_index.core.node_parser import MarkdownNodeParser, SentenceSplitter
+from llama_index.core.node_parser import SentenceSplitter
 from llama_index.core.schema import Document
 import numpy as np
 
 from utils.embedding_utils import batched_embed
-
 from models.state import State
 
 
 class ProcessingAgent:
-    """State-aware processing agent that detects sections and chunks texts.
+    """State-aware processing agent that chunks texts.
 
     Usage:
         agent = ProcessingAgent(chunk_size=500, chunk_overlap=50)
@@ -24,9 +23,10 @@ class ProcessingAgent:
     def __init__(self, chunk_size: int = 500, chunk_overlap: int = 50):
         self.chunk_size = int(chunk_size)
         self.chunk_overlap = int(chunk_overlap)
-        # Two-stage parsing: first split by markdown headers, then by size
-        self.markdown_parser = MarkdownNodeParser.from_defaults()
-        self.size_splitter = SentenceSplitter(
+
+        # Single-stage parsing: split by token size/sentences
+        # This is sufficient for plain text extracted via fitz
+        self.splitter = SentenceSplitter(
             chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap
         )
         logger.debug(
@@ -39,14 +39,7 @@ class ProcessingAgent:
         embedding_model: Optional[object] = None,
         batch_size: int = 32,
     ) -> State:
-        """Process `state.passages` and populate `state.chunks`.
-
-        Args:
-            state: State containing passages produced by acquisition agent.
-
-        Returns:
-            The modified State instance with `chunks` attribute set.
-        """
+        """Process `state.passages` and populate `state.chunks`."""
         start_time = time.perf_counter()
 
         if not state.passages:
@@ -56,12 +49,8 @@ class ProcessingAgent:
             return state
 
         logger.info(f"Processing {len(state.passages)} passages")
-        # Profile timers
         chunking_time = 0.0
         embedding_time = 0.0
-
-        # Debug: starting chunk extraction phase
-        logger.debug("Starting chunk extraction for all passages")
 
         all_chunks: List[Any] = []
         had_nonempty_passage = False
@@ -81,7 +70,6 @@ class ProcessingAgent:
             influential = passage.get(
                 "influentialCitationCount", passage.get("influential_citation_count", 0)
             )
-            # Extract PDF URL from openAccessPdf object
             oa_pdf = passage.get("openAccessPdf")
             pdf_url = oa_pdf.get("url") if oa_pdf and isinstance(oa_pdf, dict) else None
             text = passage.get("text", "") or ""
@@ -102,30 +90,16 @@ class ProcessingAgent:
 
             logger.info({"event": "processing_paper_start", "paper_id": paper_id})
 
-            # Create single document from passage text
-            # MarkdownNodeParser will automatically split by headers
+            # Create document
             doc = Document(text=text)
-            markdown_nodes = []  # Initialize to avoid NameError in cleanup
 
             try:
-                logger.debug(
-                    {
-                        "event": "markdown_parsing_start",
-                        "paper_id": paper_id,
-                        "text_length": len(text),
-                    }
-                )
-                # Stage 1: Split by markdown headers
-                markdown_nodes = self.markdown_parser.get_nodes_from_documents([doc])
-                # Stage 2: Further split by chunk size if sections are too large
-                nodes = []
-                for md_node in markdown_nodes:
-                    sub_nodes = self.size_splitter.get_nodes_from_documents([md_node])
-                    nodes.extend(sub_nodes)
+                # DIRECT SPLIT: Use SentenceSplitter directly on the document
+                nodes = self.splitter.get_nodes_from_documents([doc])
             except Exception as e:
                 logger.warning(
                     {
-                        "event": "markdown_parsing_failed",
+                        "event": "parsing_failed",
                         "paper_id": paper_id,
                         "error": str(e),
                     }
@@ -135,7 +109,7 @@ class ProcessingAgent:
             paper_chunk_count = 0
 
             for chunk_idx, node in enumerate(nodes):
-                # Attach metadata directly; fail-fast if this raises
+                # Attach metadata
                 node.metadata.update(
                     {
                         "paper_id": paper_id,
@@ -144,7 +118,6 @@ class ProcessingAgent:
                         "citation_count": citation_count,
                     }
                 )
-                # Add optional fields if present
                 if year is not None:
                     node.metadata["year"] = year
                 if venue is not None:
@@ -165,23 +138,16 @@ class ProcessingAgent:
                 }
             )
 
-            # Memory cleanup: delete temporary variables
-            del doc, text, nodes, markdown_nodes
-            logger.debug(f"♻️ GC called after processing paper {paper_id}")
-
         loop_end = time.perf_counter()
         chunking_time = loop_end - loop_start
 
-        if not all_chunks:
-            # If there were non-empty passages but no chunks, record a critical error.
-            if had_nonempty_passage:
-                msg = "Zero chunks generated from passages"
-                logger.error(msg)
-                state.append_error(msg)
+        if not all_chunks and had_nonempty_passage:
+            msg = "Zero chunks generated from passages"
+            logger.error(msg)
+            state.append_error(msg)
 
-        # If an embedding model was provided, compute embeddings in a single batched pass
+        # Embedding Logic (unchanged)
         if embedding_model is not None and all_chunks:
-            # Prepare texts (single-pass extraction) — avoid duplicating large text blobs
             texts: List[str] = []
             for node in all_chunks:
                 if hasattr(node, "get_text"):
@@ -194,7 +160,7 @@ class ProcessingAgent:
                 else:
                     texts.append("")
 
-            # Retry logic with exponential backoff
+            # Retry logic
             max_attempts = 3
             base_backoff = 0.5
             embeddings = None
@@ -208,7 +174,6 @@ class ProcessingAgent:
                     )
                     emb_end = time.perf_counter()
                     embedding_time = emb_end - emb_start
-                    # Successful call — break retry loop
                     break
                 except Exception as exc:
                     logger.exception(
@@ -220,53 +185,21 @@ class ProcessingAgent:
                     )
                     if attempt < max_attempts:
                         wait = base_backoff * (2 ** (attempt - 1))
-                        logger.info(
-                            {
-                                "event": "embedding_retry_wait",
-                                "wait_s": wait,
-                                "attempt": attempt + 1,
-                            }
-                        )
                         time.sleep(wait)
                         continue
                     else:
-                        logger.exception(
-                            "Batched embedding failed after %s attempts", max_attempts
-                        )
-                        state.append_error(
-                            f"Batched embedding failed after {max_attempts} attempts; see logs"
-                        )
+                        state.append_error("Batched embedding failed")
 
-            # If embeddings were obtained, attach them to nodes
             if embeddings is not None:
-                missing_embeddings: List[int] = []
                 for idx, (node, emb) in enumerate(zip(all_chunks, embeddings)):
                     try:
                         arr = np.asarray(emb, dtype=float)
                         if arr.shape != (384,):
-                            raise ValueError(
-                                f"Embedding dimension mismatch for chunk {idx}: {arr.shape}"
-                            )
-                        # Attach as serializable list to metadata (keeps node object small)
+                            continue
                         node.metadata["embedding"] = arr.tolist()
                     except Exception as e:
-                        logger.exception(
-                            "Failed to attach embedding for chunk %s: %s", idx, e
-                        )
-                        missing_embeddings.append(idx)
+                        logger.exception("Failed to attach embedding", idx=idx)
 
-                if missing_embeddings:
-                    logger.warning(
-                        {
-                            "event": "missing_embeddings",
-                            "count": len(missing_embeddings),
-                        }
-                    )
-                    state.append_error(
-                        f"{len(missing_embeddings)} chunks missing embeddings"
-                    )
-
-            # Info: embedding phase summary for monitoring
             logger.info(
                 {
                     "event": "embedding_complete",

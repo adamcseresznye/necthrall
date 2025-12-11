@@ -1,7 +1,7 @@
 """Integration tests for the /query API endpoint.
 
 Tests the FastAPI endpoint that exposes the full 10-stage pipeline.
-Validates the response schema critical for Frontend (Week 4).
+Validates the response schema critical for Frontend.
 
 Test Coverage:
     - Happy path: Valid POST request returns 200 with expected JSON structure

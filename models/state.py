@@ -36,13 +36,11 @@ class State(BaseModel):
     ranked_papers: Optional[List[Dict[str, Any]]] = None
     finalists: Optional[List[Dict[str, Any]]] = None  # Top 5-10
 
-    # Passages (Week 2)
     passages: Optional[List[Dict[str, Any]]] = None
 
     # Chunks produced by processing agents (LlamaIndex Documents / node objects)
     chunks: Optional[List[Any]] = None
 
-    # Answer and citations (Week 3)
     answer: Optional[str] = None
     citations: List[int] = Field(default_factory=list)
 

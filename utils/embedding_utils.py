@@ -5,10 +5,6 @@ import numpy as np
 from loguru import logger
 
 
-def _is_valid_texts(texts: object) -> bool:
-    return isinstance(texts, list)
-
-
 def _count_tokens(text: str) -> int:
     if not text:
         return 0
@@ -45,7 +41,7 @@ def batched_embed(
     - If the embedding model does not provide `embed_documents`, the function
       will attempt to call `embed` or `encode` as a fallback.
     """
-    if not _is_valid_texts(texts):
+    if not isinstance(texts, list):
         raise TypeError("`texts` must be a list of strings (or None entries).")
 
     if not isinstance(batch_size, int) or batch_size <= 0:

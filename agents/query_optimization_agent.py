@@ -6,7 +6,7 @@ for passage-level semantic retrieval, and three Semantic Scholar search variants
 """
 
 import json
-import ast  #
+import ast
 from typing import Dict, Optional
 from loguru import logger
 

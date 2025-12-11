@@ -3,13 +3,13 @@
 These tests validate the complete pipeline from query to cited answer,
 including synthesis (Stage 9) and verification (Stage 10).
 
-Week 1 Stages (1-4):
+Stages (1-4):
     1. Query Optimization
     2. Semantic Scholar Search
     3. Quality Gate
     4. Composite Scoring
 
-Week 2 Stages (5-8):
+Stages (5-8):
     5. PDF Acquisition
     6. Processing & Embedding
     7. Hybrid Retrieval
@@ -237,7 +237,7 @@ async def test_full_pipeline_happy_path_with_synthesis(
         patch.object(service, "_get_synthesis_agent") as mock_synthesis,
     ):
         # =====================================================================
-        # Setup Week 1 mocks (Stages 1-4)
+        # Setup mocks (Stages 1-4)
         # =====================================================================
         optimizer_instance = MagicMock()
         optimizer_instance.generate_dual_queries = AsyncMock(
@@ -261,7 +261,7 @@ async def test_full_pipeline_happy_path_with_synthesis(
         mock_ranker.return_value = ranker_instance
 
         # =====================================================================
-        # Setup Week 2 mocks (Stages 5-8)
+        # Setup mocks (Stages 5-8)
         # =====================================================================
         acquisition_instance = MagicMock()
 
@@ -424,7 +424,7 @@ async def test_pipeline_with_synthesis_failure_continues_gracefully(
         patch.object(service, "_get_reranker") as mock_reranker,
         patch.object(service, "_get_synthesis_agent") as mock_synthesis,
     ):
-        # Setup Week 1 mocks
+        # Setup mocks (Stages 1-4)
         optimizer_instance = MagicMock()
         optimizer_instance.generate_dual_queries = AsyncMock(
             return_value={
@@ -446,7 +446,7 @@ async def test_pipeline_with_synthesis_failure_continues_gracefully(
         ranker_instance.rank_papers.return_value = mock_finalists
         mock_ranker.return_value = ranker_instance
 
-        # Setup Week 2 mocks
+        # Setup mocks (Stages 5-8)
         acquisition_instance = MagicMock()
 
         async def mock_acquire(state):
@@ -602,7 +602,7 @@ async def test_pipeline_with_invalid_citations(
 
 
 # ============================================================================
-# Citation Validity Test (Week 3 Validation)
+# Citation Validity Test (Validation)
 # ============================================================================
 
 
@@ -617,7 +617,7 @@ async def test_synthesis_citation_validity(
 ):
     """Test that SynthesisAgent does NOT hallucinate citations.
 
-    Week 3 Validation: Verify that every [N] citation in the synthesized answer
+    Validation: Verify that every [N] citation in the synthesized answer
     corresponds to a valid index in the returned passages list.
 
     This test:
@@ -663,7 +663,7 @@ async def test_synthesis_citation_validity(
         patch.object(service, "_get_reranker") as mock_reranker,
         patch.object(service, "_get_synthesis_agent") as mock_synthesis,
     ):
-        # Setup Week 1 mocks (Stages 1-4)
+        # Setup mocks (Stages 1-4)
         optimizer_instance = MagicMock()
         optimizer_instance.generate_dual_queries = AsyncMock(
             return_value={
@@ -685,7 +685,7 @@ async def test_synthesis_citation_validity(
         ranker_instance.rank_papers.return_value = mock_finalists
         mock_ranker.return_value = ranker_instance
 
-        # Setup Week 2 mocks (Stages 5-8)
+        # Setup mocks (Stages 5-8)
         acquisition_instance = MagicMock()
 
         async def mock_acquire(state):
@@ -838,7 +838,7 @@ async def test_synthesis_citation_validity_cardiovascular_query(
         patch.object(service, "_get_reranker") as mock_reranker,
         patch.object(service, "_get_synthesis_agent") as mock_synthesis,
     ):
-        # Setup Week 1 mocks
+        # Setup mocks
         optimizer_instance = MagicMock()
         optimizer_instance.generate_dual_queries = AsyncMock(
             return_value={
@@ -862,7 +862,7 @@ async def test_synthesis_citation_validity_cardiovascular_query(
         ranker_instance.rank_papers.return_value = mock_finalists
         mock_ranker.return_value = ranker_instance
 
-        # Setup Week 2 mocks
+        # Setup mocks
         acquisition_instance = MagicMock()
 
         async def mock_acquire(state):

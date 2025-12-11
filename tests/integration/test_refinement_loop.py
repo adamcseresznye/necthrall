@@ -127,7 +127,7 @@ async def test_refinement_triggers_on_quality_gate_failure(
         3. Second search returns high-quality papers → quality gate passes
         4. refinement_count should be 1
     """
-    # Create service with no embedding model (Week 1 mode)
+    # Create service with no embedding model
     service = QueryService(embedding_model=None)
 
     # Mock the optimizer

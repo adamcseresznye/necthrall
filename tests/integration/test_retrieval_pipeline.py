@@ -1,16 +1,16 @@
-"""Integration tests for the complete Week 2 retrieval pipeline (Stages 1-8).
+"""Integration tests for the complete retrieval pipeline (Stages 1-8).
 
 These tests validate the full pipeline from query → papers → PDFs → passages,
 mocking only external dependencies (Semantic Scholar API, PDF downloads) while
 using real implementations for processing, retrieval, and reranking.
 
-Week 1 Stages (1-4):
+Stages (1-4):
     1. Query Optimization
     2. Semantic Scholar Search
     3. Quality Gate
     4. Composite Scoring
 
-Week 2 Stages (5-8):
+Stages (5-8):
     5. PDF Acquisition
     6. Processing & Embedding
     7. Hybrid Retrieval
@@ -39,7 +39,6 @@ from typing import List, Dict, Any
 # Import llama_index types for fixtures
 from llama_index.core.schema import NodeWithScore, TextNode
 
-# Import query service - this uses lazy imports for Week 2 modules
 from services.query_service import QueryService, PipelineResult
 from models.state import State
 
@@ -327,20 +326,19 @@ async def test_full_pipeline_with_mocked_stages(
 ):
     """Test complete pipeline: query → papers → PDFs → passages.
 
-    This test validates the full Week 1 + Week 2 pipeline with mocked external
+    This test validates the full pipeline with mocked external
     dependencies (Semantic Scholar API, PDF downloads) but validates all other
     components including processing, retrieval, and reranking.
 
     Validates:
-        - Week 1: finalists selected, quality_gate passed
-        - Week 2: passages returned with correct count and structure
+        - finalists selected, quality_gate passed
+        - passages returned with correct count and structure
         - Timing: execution completes in reasonable time with all 8 stages
         - Structure: all result fields properly populated
     """
     # Arrange
     service = QueryService(embedding_model=mock_embedding_model)
 
-    # Mock Week 1 stages
     with (
         patch.object(service, "_get_optimizer") as mock_optimizer,
         patch.object(service, "_get_client") as mock_client,
@@ -350,7 +348,6 @@ async def test_full_pipeline_with_mocked_stages(
         patch.object(service, "_get_retriever") as mock_retriever,
         patch.object(service, "_get_reranker") as mock_reranker,
     ):
-        # Setup Week 1 mocks
         optimizer_instance = MagicMock()
         optimizer_instance.generate_dual_queries = AsyncMock(
             return_value={
@@ -372,7 +369,6 @@ async def test_full_pipeline_with_mocked_stages(
         ranker_instance.rank_papers.return_value = mock_finalists
         mock_ranker.return_value = ranker_instance
 
-        # Setup Week 2 mocks
         acquisition_instance = MagicMock()
 
         async def mock_acquire(state):
@@ -409,7 +405,7 @@ async def test_full_pipeline_with_mocked_stages(
             )
 
     # =========================================================================
-    # Validate Week 1 outputs
+    # Validate outputs
     # =========================================================================
     assert (
         result.success is True
@@ -418,7 +414,7 @@ async def test_full_pipeline_with_mocked_stages(
     assert result.quality_gate["passed"] is True, "Quality gate should pass"
 
     # =========================================================================
-    # Validate Week 2 outputs
+    # Validate outputs
     # =========================================================================
     assert hasattr(result, "passages"), "Result should have passages attribute"
     assert (
@@ -474,7 +470,7 @@ async def test_pipeline_with_no_finalists(mock_embedding_model):
         - No crashes when encountering empty results
         - Result structure is still valid (empty finalists, empty passages)
         - Success flag is True (empty is not an error)
-        - Week 2 stages are not executed (no timing breakdown for them)
+        - Later stages are not executed (no timing breakdown for them)
     """
     # Arrange
     service = QueryService(embedding_model=mock_embedding_model)
@@ -517,12 +513,12 @@ async def test_pipeline_with_no_finalists(mock_embedding_model):
     # Quality gate result should be present
     assert result.quality_gate is not None, "Quality gate result should be present"
 
-    # Timing should include early stages but not Week 2 stages
+    # Timing should include early stages but not later stages
     assert "query_optimization" in result.timing_breakdown
     assert "semantic_scholar_search" in result.timing_breakdown
     assert "quality_gate" in result.timing_breakdown
 
-    # Week 2 stages should not be executed
+    # Later stages should not be executed
     assert (
         "pdf_acquisition" not in result.timing_breakdown
     ), "PDF acquisition should not run with no finalists"
@@ -536,7 +532,7 @@ async def test_pipeline_with_pdf_acquisition_failure(
     """Test graceful degradation when all PDF acquisitions fail.
 
     Validates:
-        - Pipeline returns Week 1 results when acquisition completely fails
+        - Pipeline returns finalists selected when acquisition completely fails
         - Success flag is True (acquisition failure is handled gracefully)
         - Empty passages list is returned
         - No crashes when acquisition returns empty
@@ -592,8 +588,8 @@ async def test_pipeline_with_pdf_acquisition_failure(
 
     # Assert - Pipeline should succeed with graceful degradation
     assert result.success is True, "Pipeline should succeed with graceful degradation"
-    assert len(result.finalists) >= 1, "Week 1 results should be preserved"
-    assert len(result.passages) == 0, "No Week 2 passages when acquisition fails"
+    assert len(result.finalists) >= 1, "Finalists should be preserved"
+    assert len(result.passages) == 0, "No passages when acquisition fails"
     assert (
         "pdf_acquisition" in result.timing_breakdown
     ), "Acquisition timing should be recorded"
@@ -608,7 +604,7 @@ async def test_pipeline_with_no_chunks_generated(
 
     Validates:
         - Pipeline handles processing failures gracefully
-        - Returns Week 1 results even if Week 2 processing fails
+        - Returns finalists selected even if later processing fails
         - No crashes when chunks cannot be generated
         - Both acquisition and processing timing are recorded
     """
@@ -672,7 +668,7 @@ async def test_pipeline_with_no_chunks_generated(
 
     # Assert - Pipeline should still succeed (graceful degradation)
     assert result.success is True, "Pipeline should succeed despite processing issues"
-    assert len(result.finalists) >= 1, "Week 1 results should be preserved"
+    assert len(result.finalists) >= 1, "Finalists should be preserved"
     assert len(result.passages) == 0, "No passages due to empty chunks"
 
     # Both acquisition and processing timing should be recorded
@@ -806,13 +802,13 @@ async def test_pipeline_performance(
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_pipeline_without_embedding_model(mock_finalists):
-    """Test that pipeline completes Week 1 stages without embedding model.
+    """Test that pipeline completes stages without embedding model.
 
     Validates:
-        - Pipeline works for Week 1 without embedding model
-        - Week 2 stages are skipped gracefully
+        - Pipeline works without embedding model
+        - Later stages are skipped gracefully
         - Finalists are returned
-        - No Week 2 timing entries
+        - No later stage timing entries
     """
     # Arrange - No embedding model
     service = QueryService(embedding_model=None)
@@ -851,21 +847,18 @@ async def test_pipeline_without_embedding_model(mock_finalists):
                 "intermittent fasting cardiovascular risks"
             )
 
-    # Assert - Week 1 should succeed
-    assert (
-        result.success is True
-    ), "Pipeline should succeed for Week 1 without embedding model"
+    assert result.success is True, "Pipeline should succeed without embedding model"
     assert len(result.finalists) >= 1, "Should have finalists"
-    assert len(result.passages) == 0, "Should skip Week 2 without embedding model"
+    assert len(result.passages) == 0, "Should skip later stages without embedding model"
 
-    # Only Week 1 timing stages should be present
     assert "query_optimization" in result.timing_breakdown
     assert "semantic_scholar_search" in result.timing_breakdown
     assert "quality_gate" in result.timing_breakdown
     assert "composite_scoring" in result.timing_breakdown
 
-    # Week 2 stages should not be in timing breakdown
-    assert "pdf_acquisition" not in result.timing_breakdown, "Week 2 should be skipped"
+    assert (
+        "pdf_acquisition" not in result.timing_breakdown
+    ), "Later stages should be skipped"
 
 
 @pytest.mark.integration
@@ -933,7 +926,6 @@ The intermittent fasting group showed significant reductions in blood pressure
         patch.object(service, "_get_retriever") as mock_retriever,
         patch.object(service, "_get_reranker") as mock_reranker,
     ):
-        # Setup Week 1 mocks
         optimizer_instance = MagicMock()
         optimizer_instance.generate_dual_queries = AsyncMock(
             return_value={
@@ -955,7 +947,6 @@ The intermittent fasting group showed significant reductions in blood pressure
         ranker_instance.rank_papers.return_value = mock_finalists
         mock_ranker.return_value = ranker_instance
 
-        # Setup Week 2 mocks with partial data
         acquisition_instance = MagicMock()
 
         async def mock_partial_acquire(state: State) -> State:
@@ -995,7 +986,7 @@ The intermittent fasting group showed significant reductions in blood pressure
     assert (
         result.success is True
     ), "Pipeline should succeed with partial PDF acquisition"
-    assert len(result.finalists) >= 1, "Should have finalists from Week 1"
+    assert len(result.finalists) >= 1, "Should have finalists from earlier stages"
 
     # Should still have passages from successfully acquired PDFs
     assert len(result.passages) > 0, "Should have passages from available PDFs"

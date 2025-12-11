@@ -1,15 +1,15 @@
-"""Query service for orchestrating the Week 1 + Week 2 pipeline.
+"""Query service for orchestrating the pipeline.
 
 Handles the complete query processing pipeline with comprehensive error handling,
 detailed timing instrumentation, and structured logging.
 
-Week 1 Stages (1-4):
+Stages (1-4):
     1. Query Optimization
     2. Semantic Scholar Search
     3. Quality Gate
     4. Composite Scoring
 
-Week 2 Stages (5-8):
+Stages (5-8):
     5. PDF Acquisition
     6. Processing & Embedding
     7. Hybrid Retrieval
@@ -23,7 +23,7 @@ import time
 from typing import Dict, List, Any, Optional, TYPE_CHECKING
 from dataclasses import dataclass, field
 from loguru import logger
-import numpy as np
+
 
 from agents.query_optimization_agent import QueryOptimizationAgent
 from agents.semantic_scholar_client import SemanticScholarClient
@@ -31,7 +31,6 @@ from agents.quality_gate import validate_quality
 from agents.ranking_agent import RankingAgent
 import config
 
-# Week 2 imports - use lazy loading to avoid DLL conflicts on Windows
 # These are imported inside methods to prevent torch DLL issues
 if TYPE_CHECKING:
     from agents.acquisition_agent import AcquisitionAgent
@@ -57,7 +56,7 @@ class PipelineResult:
         success: Whether pipeline completed successfully.
         error_message: Error message if pipeline failed.
         error_stage: Stage where error occurred.
-        passages: Top ranked passages after reranking (Week 2).
+        passages: Top ranked passages after reranking.
         answer: Synthesized answer from passages (Stage 9).
         citation_verification: Citation verification result (Stage 10).
         refinement_count: Number of query refinement attempts (0 or 1).
@@ -159,11 +158,7 @@ class VerificationError(QueryServiceError):
 
 
 class QueryService:
-    """Service for orchestrating the Week 1 + Week 2 query pipeline.
-
-    Week 1: Query optimization, paper retrieval, quality validation, and ranking.
-    Week 2: PDF acquisition, processing/embedding, hybrid retrieval, and reranking.
-
+    """Service for orchestrating the query pipeline.
     Provides comprehensive error handling and performance monitoring.
     """
 
@@ -172,8 +167,6 @@ class QueryService:
 
         Args:
             embedding_model: Pre-loaded embedding model for query/passage embedding.
-                           Optional for Week 1 (uses Semantic Scholar API embeddings).
-                           Required for Week 2+ (local passage embeddings).
         """
         self.embedding_model = embedding_model
         self._optimizer = None
@@ -346,15 +339,13 @@ class QueryService:
         return papers, quality_result
 
     async def process_query(self, query: str) -> PipelineResult:
-        """Process a user query through the complete Week 1 + Week 2 pipeline.
+        """Process a user query through the complete pipeline.
 
-        Week 1 Stages:
+        Stages:
             1. Query Optimization - Generate optimized query variants
             2. Semantic Scholar Search - Retrieve papers from API
             3. Quality Gate - Validate paper quality
             4. Composite Scoring - Rank papers by relevance
-
-        Week 2 Stages:
             5. PDF Acquisition - Download PDFs for top papers
             6. Processing & Embedding - Chunk and embed text
             7. Hybrid Retrieval - Vector + BM25 search with RRF fusion
@@ -492,12 +483,12 @@ class QueryService:
                 logger.info("Quality gate failed - skipping ranking stage")
 
             # =====================================================================
-            # Week 2 Stages (5-8): PDF Acquisition, Processing, Retrieval, Reranking
+            # PDF Acquisition, Processing, Retrieval, Reranking
             # =====================================================================
 
             # Check if we have finalists to process
             if not finalists:
-                logger.info("ℹ️ No finalists to process - returning Week 1 results only")
+                logger.info("ℹ️ No finalists to process")
                 execution_time = time.perf_counter() - start_time
                 result = PipelineResult(
                     query=query,
@@ -512,11 +503,10 @@ class QueryService:
                 )
                 return result
 
-            # Check if embedding model is available for Week 2 stages
+            # Check if embedding model is available for stages (5-8)
             if self.embedding_model is None:
                 logger.warning(
-                    "⚠️ Embedding model not available - skipping Week 2 stages (5-8). "
-                    "Week 1 pipeline results only."
+                    "⚠️ Embedding model not available - skipping stages (5-8). "
                 )
                 execution_time = time.perf_counter() - start_time
                 result = PipelineResult(
@@ -562,7 +552,7 @@ class QueryService:
 
             # Check if we have passages to process
             if not passages:
-                logger.warning("⚠️ No PDFs acquired - returning Week 1 results only")
+                logger.warning("⚠️ No PDFs acquired")
                 execution_time = time.perf_counter() - start_time
                 result = PipelineResult(
                     query=query,
@@ -608,7 +598,7 @@ class QueryService:
 
             # Check if we have chunks to retrieve from
             if not chunks:
-                logger.warning("⚠️ No chunks generated - returning Week 1 results only")
+                logger.warning("⚠️ No chunks generated")
                 execution_time = time.perf_counter() - start_time
                 result = PipelineResult(
                     query=query,
@@ -681,7 +671,7 @@ class QueryService:
 
             # Check if we have retrieval results to rerank
             if not retrieval_results:
-                logger.warning("⚠️ No retrieval results - returning Week 1 results only")
+                logger.warning("⚠️ No retrieval results")
                 execution_time = time.perf_counter() - start_time
                 result = PipelineResult(
                     query=query,
@@ -786,7 +776,6 @@ class QueryService:
                             str(e),
                         )
 
-            # Success - Full Week 1 + Week 2 pipeline
             execution_time = time.perf_counter() - start_time
             result = PipelineResult(
                 query=query,

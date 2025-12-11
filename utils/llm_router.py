@@ -39,6 +39,30 @@ class LLMRouter:
             "synthesis": (config.SYNTHESIS_MODEL, config.SYNTHESIS_FALLBACK),
         }
 
+    async def _call_model(
+        self, model: str, prompt: str, api_key: str, timeout: int = 30
+    ):
+        """Private helper to make an LLM API call with the given model and credentials.
+
+        Args:
+            model: The model identifier to use.
+            prompt: The prompt text to send to the LLM.
+            api_key: The API key for the provider.
+            timeout: Request timeout in seconds (default 30).
+
+        Returns:
+            The response object from litellm.acompletion.
+
+        Raises:
+            Any exception from the LLM provider (APIError, TimeoutError, etc.)
+        """
+        return await litellm.acompletion(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            timeout=timeout,
+            api_key=api_key,
+        )
+
     async def generate(self, prompt: str, model_type: str) -> str:
         """Generate a response for the given `prompt` using models associated
         with `model_type`.
@@ -66,79 +90,34 @@ class LLMRouter:
             raise ValueError(f"Unknown model_type: {model_type}")
 
         primary, fallback = mapping
-        # Choose a default timeout per high level plan
         timeout = 30
 
         # Track which model was ultimately used so we can log it at exit
         used_label: Optional[str] = None
         used_model_name: Optional[str] = None
 
+        # Try primary model
         try:
-            response = await litellm.acompletion(
-                model=primary,
-                messages=[{"role": "user", "content": prompt}],
-                timeout=timeout,
-                api_key=self._primary_api_key,
+            response = await self._call_model(
+                primary, prompt, self._primary_api_key, timeout
             )
             used_label = "primary"
             used_model_name = primary
-        except litellm.exceptions.APIError as e:
-            # API errors from providers
-            logger.warning(f"Primary LLM APIError for model {primary}: {e}")
-            logger.info(f"Retrying LLM call with fallback model {fallback}")
-            try:
-                response = await litellm.acompletion(
-                    model=fallback,
-                    messages=[{"role": "user", "content": prompt}],
-                    timeout=timeout,
-                    api_key=self._secondary_api_key,
-                )
-                used_label = "fallback"
-                used_model_name = fallback
-            except (litellm.exceptions.APIError, asyncio.TimeoutError) as e2:
-                logger.exception(
-                    f"Fallback LLM model {fallback} also failed with API/Timeout: {e2}"
-                )
-                raise
-            except Exception:
-                logger.exception(f"Fallback LLM model {fallback} also failed")
-                raise
-        except asyncio.TimeoutError as e:
-            # Request timed out
-            logger.warning(f"Primary LLM Timeout for model {primary}: {e}")
-            logger.info(f"Retrying LLM call with fallback model {fallback}")
-            try:
-                response = await litellm.acompletion(
-                    model=fallback,
-                    messages=[{"role": "user", "content": prompt}],
-                    timeout=timeout,
-                    api_key=self._secondary_api_key,
-                )
-                used_label = "fallback"
-                used_model_name = fallback
-            except (litellm.exceptions.APIError, asyncio.TimeoutError) as e2:
-                logger.exception(
-                    f"Fallback LLM model {fallback} also failed with API/Timeout: {e2}"
-                )
-                raise
-            except Exception:
-                logger.exception(f"Fallback LLM model {fallback} also failed")
-                raise
         except Exception as e:
-            # Unknown/other exceptions
-            logger.error(f"Primary LLM unexpected error for model {primary}: {e}")
+            logger.warning(f"Primary LLM model {primary} failed: {e}")
             logger.info(f"Retrying LLM call with fallback model {fallback}")
+
+            # Try fallback model
             try:
-                response = await litellm.acompletion(
-                    model=fallback,
-                    messages=[{"role": "user", "content": prompt}],
-                    timeout=timeout,
-                    api_key=self._secondary_api_key,
+                response = await self._call_model(
+                    fallback, prompt, self._secondary_api_key, timeout
                 )
                 used_label = "fallback"
                 used_model_name = fallback
-            except Exception:
-                logger.exception(f"Fallback LLM model {fallback} also failed")
+            except Exception as e_fallback:
+                logger.exception(
+                    f"Fallback LLM model {fallback} also failed: {e_fallback}"
+                )
                 raise
 
         # Extract the chat content like OpenAI style responses
