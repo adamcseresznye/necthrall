@@ -204,7 +204,7 @@ def test_agent_initialization():
     """SynthesisAgent should initialize with default temperature."""
     agent = SynthesisAgent()
 
-    assert agent.temperature == 0.3
+    assert agent.temperature == 0.15
     assert agent.router is not None
 
 

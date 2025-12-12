@@ -274,7 +274,12 @@ def init_ui(fastapi_app):
                 ).props("no-spinner")
 
                 ui.label("Necthrall").classes(
-                    "text-2xl md:text-4xl font-bold text-slate-800 leading-none pb-1 md:pb-2"
+                    "text-2xl md:text-4xl font-bold text-slate-800 leading-none pb-1 md:pb-2 cursor-pointer"
+                ).on(
+                    "click",
+                    lambda e=None: ui.run_javascript(
+                        "if (window.location.pathname !== '/') { window.location.href = '/'; } else { window.location.reload(); }"
+                    ),
                 )
 
             # About button
@@ -472,7 +477,7 @@ def init_ui(fastapi_app):
             # Center everything on all sizes: branding and links stacked and centered
             with ui.column().classes("w-full items-center gap-2 text-center"):
                 ui.label(
-                    f"© {str(datetime.date.today().year)} Necthrall. Research responsibly."
+                    f"© {str(datetime.date.today().year)} Necthrall. All rights reserved."
                 ).classes("font-bold")
                 ui.label(
                     "AI can make mistakes. Always verify important citations."
