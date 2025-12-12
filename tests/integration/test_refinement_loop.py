@@ -109,6 +109,43 @@ def high_quality_papers():
     ]
 
 
+@pytest.fixture
+def mock_client(low_quality_papers):
+    """Create a mock SemanticScholarClient."""
+    client = AsyncMock()
+    client.multi_query_search = AsyncMock(return_value=low_quality_papers)
+    return client
+
+
+@pytest.fixture
+def mock_ranker(high_quality_papers):
+    """Create a mock RankingAgent."""
+    ranker = MagicMock()
+    ranker.rank_papers.return_value = high_quality_papers
+    return ranker
+
+
+@pytest.fixture
+def query_service(mock_optimizer, mock_client, mock_ranker):
+    """Create a QueryService instance with mocked agents."""
+    service = QueryService()
+
+    # Inject mocks directly into discovery service
+    service.discovery_service._optimizer = mock_optimizer
+    service.discovery_service._client = mock_client
+    service.discovery_service._ranker = mock_ranker
+
+    # Mock other components we don't need for this test
+    service.ingestion_service._acquisition_agent = MagicMock()
+    service.ingestion_service._processing_agent = MagicMock()
+    service.rag_service._retriever = MagicMock()
+    service.rag_service._reranker = MagicMock()
+    service.rag_service._synthesis_agent = MagicMock()
+    service.rag_service._verifier = MagicMock()
+
+    return service
+
+
 # ============================================================================
 # Test Cases
 # ============================================================================
@@ -131,7 +168,7 @@ async def test_refinement_triggers_on_quality_gate_failure(
     service = QueryService(embedding_model=None)
 
     # Mock the optimizer
-    service._optimizer = mock_optimizer
+    service.discovery_service._optimizer = mock_optimizer
 
     # Mock the Semantic Scholar client to return bad papers first, good papers second
     mock_client = AsyncMock()
@@ -148,7 +185,7 @@ async def test_refinement_triggers_on_quality_gate_failure(
             return high_quality_papers
 
     mock_client.multi_query_search = mock_search
-    service._client = mock_client
+    service.discovery_service._client = mock_client
 
     # Mock quality gate to fail on first call (low_quality_papers), pass on second (high_quality_papers)
     quality_call_count = 0
@@ -180,7 +217,7 @@ async def test_refinement_triggers_on_quality_gate_failure(
             }
 
     with patch(
-        "services.query_service.validate_quality", side_effect=mock_validate_quality
+        "services.discovery_service.validate_quality", side_effect=mock_validate_quality
     ):
         # Run the pipeline
         result = await service.process_query(
@@ -215,11 +252,11 @@ async def test_no_refinement_when_first_attempt_succeeds(
         3. refinement_count should be 0
     """
     service = QueryService(embedding_model=None)
-    service._optimizer = mock_optimizer
+    service.discovery_service._optimizer = mock_optimizer
 
     mock_client = AsyncMock()
     mock_client.multi_query_search = AsyncMock(return_value=high_quality_papers)
-    service._client = mock_client
+    service.discovery_service._client = mock_client
 
     # Mock quality gate to pass on first call
     def mock_validate_quality(papers, query_embedding):
@@ -234,7 +271,7 @@ async def test_no_refinement_when_first_attempt_succeeds(
         }
 
     with patch(
-        "services.query_service.validate_quality", side_effect=mock_validate_quality
+        "services.discovery_service.validate_quality", side_effect=mock_validate_quality
     ):
         result = await service.process_query(
             "What are the cardiovascular effects of intermittent fasting?"
@@ -262,12 +299,12 @@ async def test_pipeline_returns_failure_after_both_attempts_fail(
         5. refinement_count should be 1
     """
     service = QueryService(embedding_model=None)
-    service._optimizer = mock_optimizer
+    service.discovery_service._optimizer = mock_optimizer
 
     # Mock client to always return low-quality papers
     mock_client = AsyncMock()
     mock_client.multi_query_search = AsyncMock(return_value=low_quality_papers)
-    service._client = mock_client
+    service.discovery_service._client = mock_client
 
     # Mock quality gate to always fail
     def mock_validate_quality(papers, query_embedding):
@@ -282,7 +319,7 @@ async def test_pipeline_returns_failure_after_both_attempts_fail(
         }
 
     with patch(
-        "services.query_service.validate_quality", side_effect=mock_validate_quality
+        "services.discovery_service.validate_quality", side_effect=mock_validate_quality
     ):
         result = await service.process_query(
             "What are the cardiovascular effects of intermittent fasting?"
@@ -308,7 +345,7 @@ async def test_max_one_refinement_attempt(mock_optimizer, low_quality_papers):
         3. No further refinements even if second attempt fails
     """
     service = QueryService(embedding_model=None)
-    service._optimizer = mock_optimizer
+    service.discovery_service._optimizer = mock_optimizer
 
     call_count = 0
 
@@ -319,7 +356,7 @@ async def test_max_one_refinement_attempt(mock_optimizer, low_quality_papers):
 
     mock_client = AsyncMock()
     mock_client.multi_query_search = mock_search
-    service._client = mock_client
+    service.discovery_service._client = mock_client
 
     # Mock quality gate to always fail
     def mock_validate_quality(papers, query_embedding):
@@ -334,7 +371,7 @@ async def test_max_one_refinement_attempt(mock_optimizer, low_quality_papers):
         }
 
     with patch(
-        "services.query_service.validate_quality", side_effect=mock_validate_quality
+        "services.discovery_service.validate_quality", side_effect=mock_validate_quality
     ):
         result = await service.process_query(
             "What are the cardiovascular effects of intermittent fasting?"
@@ -357,7 +394,7 @@ async def test_refinement_uses_broad_query(
     Verify the queries passed to the second search include the broad query.
     """
     service = QueryService(embedding_model=None)
-    service._optimizer = mock_optimizer
+    service.discovery_service._optimizer = mock_optimizer
 
     captured_queries = []
 
@@ -369,7 +406,7 @@ async def test_refinement_uses_broad_query(
 
     mock_client = AsyncMock()
     mock_client.multi_query_search = mock_search
-    service._client = mock_client
+    service.discovery_service._client = mock_client
 
     # Mock quality gate: fail first, pass second
     quality_call_count = 0
@@ -398,7 +435,7 @@ async def test_refinement_uses_broad_query(
         }
 
     with patch(
-        "services.query_service.validate_quality", side_effect=mock_validate_quality
+        "services.discovery_service.validate_quality", side_effect=mock_validate_quality
     ):
         result = await service.process_query(
             "What are the cardiovascular effects of intermittent fasting?"
@@ -451,7 +488,7 @@ async def test_timing_breakdown_tracks_refinement_separately(
 ):
     """Test that timing breakdown separately tracks initial and refinement stages."""
     service = QueryService(embedding_model=None)
-    service._optimizer = mock_optimizer
+    service.discovery_service._optimizer = mock_optimizer
 
     call_count = 0
 
@@ -464,7 +501,7 @@ async def test_timing_breakdown_tracks_refinement_separately(
 
     mock_client = AsyncMock()
     mock_client.multi_query_search = mock_search
-    service._client = mock_client
+    service.discovery_service._client = mock_client
 
     # Mock quality gate: fail first, pass second
     quality_call_count = 0
@@ -493,7 +530,7 @@ async def test_timing_breakdown_tracks_refinement_separately(
         }
 
     with patch(
-        "services.query_service.validate_quality", side_effect=mock_validate_quality
+        "services.discovery_service.validate_quality", side_effect=mock_validate_quality
     ):
         result = await service.process_query(
             "What are the cardiovascular effects of intermittent fasting?"

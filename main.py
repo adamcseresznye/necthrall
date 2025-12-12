@@ -25,11 +25,12 @@ if os.name == "nt":
 
     try:
         import torch  # noqa: F401 - Must be imported before ONNX
-    except ImportError:
+    except (ImportError, OSError):
         pass
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 from loguru import logger
 from datetime import datetime
 from nicegui import ui
@@ -66,17 +67,17 @@ async def startup_event():
 
         from services.query_service import QueryService
 
-        app.state.query_service = QueryService()
-        logger.info("🚀 Query service initialized")
-
         # Initialize embedding model if available
         embedding_loaded = False
+        embedding_model = None
         try:
             from config.embedding_config import init_embedding
 
             await init_embedding(app)
-            embedding_loaded = True
-            logger.info("✅ Embedding model loaded successfully")
+            if hasattr(app.state, "embedding_model"):
+                embedding_model = app.state.embedding_model
+                embedding_loaded = True
+                logger.info("✅ Embedding model loaded successfully")
         except ImportError as e:
             logger.warning(f"⚠️ Embedding config module not found: {e}")
         except RuntimeError as e:
@@ -84,13 +85,12 @@ async def startup_event():
         except Exception:
             logger.exception("⚠️ Embedding model failed to initialize")
 
-        # Inject embedding model into QueryService if loaded
-        if embedding_loaded and hasattr(app.state, "embedding_model"):
-            try:
-                app.state.query_service.embedding_model = app.state.embedding_model
-                logger.info("✅ Embedding model injected into QueryService")
-            except Exception as e:
-                logger.warning(f"❌ Failed to inject embedding model: {e}")
+        # Initialize QueryService with embedding model
+        app.state.query_service = QueryService(embedding_model=embedding_model)
+        logger.info("🚀 Query service initialized")
+
+        if embedding_loaded:
+            logger.info("✅ Embedding model injected into QueryService")
 
         logger.info("✅ Application startup successful")
         logger.info(f"Query optimization model: {config.QUERY_OPTIMIZATION_MODEL}")
@@ -108,6 +108,84 @@ async def health_check():
         "timestamp": datetime.now().isoformat(),
         "version": "3.0.0",
     }
+
+
+class QueryRequest(BaseModel):
+    query: str = Field(..., min_length=1, max_length=500)
+
+
+@app.post("/query")
+async def query_endpoint(request: QueryRequest):
+    """Process a research query."""
+    if not hasattr(app.state, "query_service"):
+        raise HTTPException(status_code=503, detail="Query service not initialized")
+
+    try:
+        result = await app.state.query_service.process_query(request.query)
+
+        if not result.success:
+            # Handle specific error cases
+            if (
+                result.error_message
+                and "Semantic Scholar API is currently unavailable"
+                in result.error_message
+            ):
+                raise HTTPException(
+                    status_code=503,
+                    detail=result.error_message,
+                )
+
+            # Include stage in error detail for debugging
+            error_detail = (
+                result.error_message or "Pipeline failed without error message"
+            )
+            if result.error_stage:
+                error_detail = f"{error_detail} (Stage: {result.error_stage})"
+
+            raise HTTPException(
+                status_code=500,
+                detail=error_detail,
+            )
+
+        # Format citations with IDs
+        citations = []
+        if result.passages:
+            for idx, p in enumerate(result.passages, 1):
+                # Handle both dict and object access
+                text = p.get("text") if isinstance(p, dict) else getattr(p, "text", "")
+                metadata = (
+                    p.get("metadata")
+                    if isinstance(p, dict)
+                    else getattr(p, "metadata", {})
+                ).copy()
+
+                # Ensure score is in metadata if available
+                score = (
+                    p.get("score") if isinstance(p, dict) else getattr(p, "score", None)
+                )
+                if score is not None:
+                    metadata["score"] = score
+
+                citations.append({"id": idx, "text": text, "metadata": metadata})
+
+        return {
+            "query": request.query,
+            "answer": result.answer
+            or "No answer could be generated from the available sources.",
+            "citations": citations,
+            "finalists": result.finalists,
+            "execution_time": result.execution_time,
+            "timing_breakdown": result.timing_breakdown,
+            "optimized_queries": result.optimized_queries,
+            "quality_gate": result.quality_gate,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Query processing failed")
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        )
 
 
 # =============================================================================

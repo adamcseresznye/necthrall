@@ -47,6 +47,12 @@ PRIMARY_LLM_API_KEY = os.getenv("PRIMARY_LLM_API_KEY")
 SECONDARY_LLM_API_KEY = os.getenv("SECONDARY_LLM_API_KEY")
 
 # ============================================================================
+# RAG Configuration
+# ============================================================================
+RAG_RETRIEVAL_TOP_K = int(os.getenv("RAG_RETRIEVAL_TOP_K", "15"))
+RAG_RERANK_TOP_K = int(os.getenv("RAG_RERANK_TOP_K", "12"))
+
+# ============================================================================
 # Application Settings
 # ============================================================================
 TIMEOUT = int(os.getenv("TIMEOUT", "30"))  # API timeout in seconds

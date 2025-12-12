@@ -32,26 +32,42 @@ import re
 
 FEW_SHOT_EXAMPLE = """
 ### Executive Summary
-Intermittent fasting (IF) demonstrates consistent, modest benefits for cardiovascular health, primarily driven by weight loss (4-7% [3]) and improved lipid profiles. While acute metabolic shifts—such as rapid TMAO reduction—are documented [2], long-term cardiovascular protection remains debated due to high attrition rates in trials (up to 38% [3]) and heterogeneity in fasting protocols [6][7].
+**Intermittent fasting (IF) demonstrates consistent, modest benefits for cardiovascular health, primarily driven by weight loss and improved lipid profiles.**
+
+While acute metabolic shifts—such as rapid TMAO reduction—are documented [2], long-term cardiovascular protection remains debated due to high attrition rates in trials (up to 38% [3]) and heterogeneity in fasting protocols [6][7]. Weight and BMI reduction through alternate-day fasting (ADF) achieves a 7% weight loss nadir at 6 months [3], with efficacy comparable to daily caloric restriction [12].
+
 
 ### Key Findings
-* **Weight & BMI Reduction:** Alternate-day fasting (ADF) achieves a 7% weight loss nadir at 6 months, stabilizing at 4.5% below baseline at 12 months [3]. This efficacy is comparable to daily caloric restriction for overweight adults [12].
-* **Biomarker Modulation:** Fasting induces rapid metabolic switching; a single 24-hour water-only fast reduced circulating TMAO from 27.1 to 14.3 ng/ml (p=0.019) [2].
-* **Lipid Profile Improvement:** IF protocols generally lower total cholesterol and LDL-C, though the magnitude of effect varies significantly by adherence levels [6][7].
+* **Weight & BMI Reduction:** Alternate-day fasting (ADF) achieves a 7% weight loss nadir at 6 months [3], stabilizing at 4.5% below baseline at 12 months [3]. This efficacy is comparable to daily caloric restriction for overweight adults [12].
+* **Biomarker Modulation:** A single 24-hour water-only fast reduced circulating TMAO from 27.1 to 14.3 ng/ml (p=0.019) [2].
+* **Lipid Profile Improvement:** IF protocols generally lower total cholesterol [6] and LDL-C [7], though the magnitude of effect varies significantly by adherence levels.
+
 
 ### Synthesis & Implications
 * **Mechanism of Action:** The benefits appear linked to both systemic weight reduction [3] and acute metabolic pauses that lower inflammatory markers like TMAO [2].
-* **Protocol Viability:** While physiologically effective, the strictness of ADF leads to lower long-term adherence compared to less rigid restrictions, potentially limiting its utility as a public health intervention [3][12].
+* **Protocol Viability:** While physiologically effective, the strictness of ADF leads to lower long-term adherence compared to less rigid restrictions [3], potentially limiting its utility as a public health intervention [12].
+
 
 ### Methodological Limits
-* **Attrition Bias:** High dropout rates (38% in ADF arms) likely inflate reported benefits by excluding non-adherent participants [3].
-* **Transient vs. Chronic:** Key biomarkers like TMAO were often measured after acute fasting events, not reflecting long-term steady states [2].
+* **Attrition Bias:** High dropout rates (38% in ADF arms [3]) likely inflate reported benefits by excluding non-adherent participants.
+* **Transient vs. Chronic:** Key biomarkers like TMAO were often measured after acute fasting events [2], not reflecting long-term steady states.
+
+---
+
+❌ **INCORRECT EXAMPLE:**
+"Fasting reduces TMAO and improves lipid profiles [2][3]."
+*(Violates atomic citation rule—unclear which source supports which claim)*
+
+✅ **CORRECT VERSION:**
+"Fasting reduces TMAO [2] and improves lipid profiles [3]."
 """
+
 
 CITATION_QA_TEMPLATE = (
     "You are a PhD-level research assistant. Your goal is to write a highly dense, rigorous synthesis. "
     "**Longer is NOT better.** Quality is defined by information density and thematic organization.\n"
     "---------------------\n"
+    "### CONTEXT CHUNKS (Use ONLY these for citations):\n"
     "{context_str}\n"
     "---------------------\n\n"
     "### INSTRUCTIONS (Follow Strictly):\n"
@@ -74,22 +90,28 @@ CITATION_QA_TEMPLATE = (
     "       * **IF** the query compares entities (2 or more), treat every bullet as a 'table row'.\n"
     "       * **Rule:** Strictly repeat the 'vs.' pattern for every entity.\n"
     "       * **Format:** '**Category:** Entity A (Detail) **vs.** Entity B (Detail).'\n"
-    "       * (Example: '**Timeframe:** Metabolomics (Seconds/Minutes) [1] **vs.** Proteomics (Hours/Days) [2].')\n"
     "   - **NO IMAGES**: Do not generate image tags.\n\n"
     "4. **QUANTITATIVE DATA & CITATION PRECISION (CRITICAL)**: \n"
-    "   - **NO OUTSIDE KNOWLEDGE**: You are strictly limited to the provided text. Do not use external knowledge.\n"
+    "   - **NO OUTSIDE KNOWLEDGE**: You are strictly limited to the provided context chunks above. Do not use external knowledge.\n"
     "   - **NO HALLUCINATIONS**: If the text says 'expensive', **DO NOT** invent a number like '$500'. Write 'high cost' instead.\n"
     "   - **Specifics**: Use p-values, N=, and % changes **ONLY** if explicitly stated in the provided text.\n"
-    "   - **GRANULAR CITATION**: \n"
-    "       * **Rule:** Cite the source [N] *immediately* after the specific statistic it supports.\n"
+    "   - **ATOMIC CITATION RULE (MANDATORY)**: \n"
+    "       * Each statistic or claim gets exactly ONE citation [N] immediately after it.\n"
+    "       * **VERIFICATION STEP**: For every [N], ask yourself: 'Does passage N contain this exact number/claim?'\n"
     "       * **Correct:** 'Method A yield is 80% [1] vs. Method B is 40% [2].'\n"
     "       * **Incorrect:** 'Method A yield is 80% vs. Method B is 40% [1][2].'\n"
     "       * **Incorrect:** 'Method A and B yields are 80% and 40% respectively [1].' (Unless [1] contains BOTH numbers).\n"
-    "   - **NO CITATION DUMPING**: \n"
-    "       * **Strictly Forbidden:** Never group more than 2 citations together (e.g., `[1][2][3]` is prohibited).\n"
+    "   - **FORBIDDEN PATTERN**: Never group more than 2 citations together (e.g., `[1][2][3]` is prohibited).\n"
     "       * **Requirement:** If multiple sources support a statement, split the statement so each source supports a specific part.\n"
-    "   - **VERIFICATION**: Ensure the source [N] *actually contains* the specific number attached to it.\n\n"
-    "5. **START IMMEDIATELY**: \n"
+    "   - **CROSS-CHECK**: Before finalizing, re-read each citation and confirm the passage actually contains that specific fact.\n\n"
+    "5. **CITATION VALIDATION (MANDATORY PRE-CHECK)**:\n"
+    "   - Before writing each sentence with a factual claim, identify which source [N] supports it.\n"
+    "   - If no source contains the information, write 'Evidence unavailable' or omit the claim entirely.\n"
+    "   - **NEVER** cite [N] unless you can mentally quote the exact text from passage N that supports your claim.\n"
+    "   - **PLANNING STEP**: For each key finding, create a mental note:\n"
+    "       * 'Claim: [X]. Supporting passage: [N]. Key quote from passage: \"...\"'\n"
+    "   - Then write the synthesis using only these validated claim-passage pairs.\n\n"
+    "6. **START IMMEDIATELY**: \n"
     "   - Start your response directly with the header '### Executive Summary'.\n"
     "   - Do not use introductory labels like 'Scientific Answer:' or 'Here is the synthesis'.\n\n"
     "### REQUIRED OUTPUT FORMAT:\n"
@@ -109,16 +131,16 @@ class SynthesisAgent:
 
     Attributes:
         router: The LLMRouter instance for LLM calls.
-        temperature: Temperature for synthesis (default 0.3 for consistency).
+        temperature: Temperature for synthesis (default 0.15 for consistency).
     """
 
     INSUFFICIENT_CONTEXT_MESSAGE = "I cannot answer this based on the provided sources."
 
-    def __init__(self, temperature: float = 0.3) -> None:
+    def __init__(self, temperature: float = 0.15) -> None:
         """Initialize the synthesis agent.
 
         Args:
-            temperature: LLM temperature for generation (0.3 = focused but not rigid).
+            temperature: LLM temperature for generation (0.15 = focused but not rigid).
         """
         self.router = LLMRouter()
         self.temperature = temperature

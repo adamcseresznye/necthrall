@@ -227,14 +227,18 @@ async def test_full_pipeline_happy_path_with_synthesis(
 
     # Mock all pipeline stages
     with (
-        patch.object(service, "_get_optimizer") as mock_optimizer,
-        patch.object(service, "_get_client") as mock_client,
-        patch.object(service, "_get_ranker") as mock_ranker,
-        patch.object(service, "_get_acquisition_agent") as mock_acquisition,
-        patch.object(service, "_get_processing_agent") as mock_processing,
-        patch.object(service, "_get_retriever") as mock_retriever,
-        patch.object(service, "_get_reranker") as mock_reranker,
-        patch.object(service, "_get_synthesis_agent") as mock_synthesis,
+        patch.object(service.discovery_service, "_get_optimizer") as mock_optimizer,
+        patch.object(service.discovery_service, "_get_client") as mock_client,
+        patch.object(service.discovery_service, "_get_ranker") as mock_ranker,
+        patch.object(
+            service.ingestion_service, "_get_acquisition_agent"
+        ) as mock_acquisition,
+        patch.object(
+            service.ingestion_service, "_get_processing_agent"
+        ) as mock_processing,
+        patch.object(service.rag_service, "_get_retriever") as mock_retriever,
+        patch.object(service.rag_service, "_get_reranker") as mock_reranker,
+        patch.object(service.rag_service, "_get_synthesis_agent") as mock_synthesis,
     ):
         # =====================================================================
         # Setup mocks (Stages 1-4)
@@ -299,7 +303,7 @@ async def test_full_pipeline_happy_path_with_synthesis(
         # =====================================================================
         # Patch validate_quality for Stage 3
         # =====================================================================
-        with patch("services.query_service.validate_quality") as mock_quality:
+        with patch("services.discovery_service.validate_quality") as mock_quality:
             mock_quality.return_value = {"passed": True, "metrics": {}}
 
             # Act
@@ -415,14 +419,18 @@ async def test_pipeline_with_synthesis_failure_continues_gracefully(
     service = QueryService(embedding_model=mock_embedding_model)
 
     with (
-        patch.object(service, "_get_optimizer") as mock_optimizer,
-        patch.object(service, "_get_client") as mock_client,
-        patch.object(service, "_get_ranker") as mock_ranker,
-        patch.object(service, "_get_acquisition_agent") as mock_acquisition,
-        patch.object(service, "_get_processing_agent") as mock_processing,
-        patch.object(service, "_get_retriever") as mock_retriever,
-        patch.object(service, "_get_reranker") as mock_reranker,
-        patch.object(service, "_get_synthesis_agent") as mock_synthesis,
+        patch.object(service.discovery_service, "_get_optimizer") as mock_optimizer,
+        patch.object(service.discovery_service, "_get_client") as mock_client,
+        patch.object(service.discovery_service, "_get_ranker") as mock_ranker,
+        patch.object(
+            service.ingestion_service, "_get_acquisition_agent"
+        ) as mock_acquisition,
+        patch.object(
+            service.ingestion_service, "_get_processing_agent"
+        ) as mock_processing,
+        patch.object(service.rag_service, "_get_retriever") as mock_retriever,
+        patch.object(service.rag_service, "_get_reranker") as mock_reranker,
+        patch.object(service.rag_service, "_get_synthesis_agent") as mock_synthesis,
     ):
         # Setup mocks (Stages 1-4)
         optimizer_instance = MagicMock()
@@ -480,7 +488,7 @@ async def test_pipeline_with_synthesis_failure_continues_gracefully(
         )
         mock_synthesis.return_value = synthesis_instance
 
-        with patch("services.query_service.validate_quality") as mock_quality:
+        with patch("services.discovery_service.validate_quality") as mock_quality:
             mock_quality.return_value = {"passed": True, "metrics": {}}
 
             # Act
@@ -521,14 +529,18 @@ async def test_pipeline_with_invalid_citations(
     invalid_answer = "Fasting is beneficial [1] and has many effects [99]."
 
     with (
-        patch.object(service, "_get_optimizer") as mock_optimizer,
-        patch.object(service, "_get_client") as mock_client,
-        patch.object(service, "_get_ranker") as mock_ranker,
-        patch.object(service, "_get_acquisition_agent") as mock_acquisition,
-        patch.object(service, "_get_processing_agent") as mock_processing,
-        patch.object(service, "_get_retriever") as mock_retriever,
-        patch.object(service, "_get_reranker") as mock_reranker,
-        patch.object(service, "_get_synthesis_agent") as mock_synthesis,
+        patch.object(service.discovery_service, "_get_optimizer") as mock_optimizer,
+        patch.object(service.discovery_service, "_get_client") as mock_client,
+        patch.object(service.discovery_service, "_get_ranker") as mock_ranker,
+        patch.object(
+            service.ingestion_service, "_get_acquisition_agent"
+        ) as mock_acquisition,
+        patch.object(
+            service.ingestion_service, "_get_processing_agent"
+        ) as mock_processing,
+        patch.object(service.rag_service, "_get_retriever") as mock_retriever,
+        patch.object(service.rag_service, "_get_reranker") as mock_reranker,
+        patch.object(service.rag_service, "_get_synthesis_agent") as mock_synthesis,
     ):
         # Setup mocks (simplified for this test)
         optimizer_instance = MagicMock()
@@ -583,7 +595,7 @@ async def test_pipeline_with_invalid_citations(
         synthesis_instance.synthesize = AsyncMock(return_value=invalid_answer)
         mock_synthesis.return_value = synthesis_instance
 
-        with patch("services.query_service.validate_quality") as mock_quality:
+        with patch("services.discovery_service.validate_quality") as mock_quality:
             mock_quality.return_value = {"passed": True, "metrics": {}}
 
             # Act
@@ -654,14 +666,18 @@ async def test_synthesis_citation_validity(
     )
 
     with (
-        patch.object(service, "_get_optimizer") as mock_optimizer,
-        patch.object(service, "_get_client") as mock_client,
-        patch.object(service, "_get_ranker") as mock_ranker,
-        patch.object(service, "_get_acquisition_agent") as mock_acquisition,
-        patch.object(service, "_get_processing_agent") as mock_processing,
-        patch.object(service, "_get_retriever") as mock_retriever,
-        patch.object(service, "_get_reranker") as mock_reranker,
-        patch.object(service, "_get_synthesis_agent") as mock_synthesis,
+        patch.object(service.discovery_service, "_get_optimizer") as mock_optimizer,
+        patch.object(service.discovery_service, "_get_client") as mock_client,
+        patch.object(service.discovery_service, "_get_ranker") as mock_ranker,
+        patch.object(
+            service.ingestion_service, "_get_acquisition_agent"
+        ) as mock_acquisition,
+        patch.object(
+            service.ingestion_service, "_get_processing_agent"
+        ) as mock_processing,
+        patch.object(service.rag_service, "_get_retriever") as mock_retriever,
+        patch.object(service.rag_service, "_get_reranker") as mock_reranker,
+        patch.object(service.rag_service, "_get_synthesis_agent") as mock_synthesis,
     ):
         # Setup mocks (Stages 1-4)
         optimizer_instance = MagicMock()
@@ -717,7 +733,7 @@ async def test_synthesis_citation_validity(
         synthesis_instance.synthesize = AsyncMock(return_value=synthesis_answer)
         mock_synthesis.return_value = synthesis_instance
 
-        with patch("services.query_service.validate_quality") as mock_quality:
+        with patch("services.discovery_service.validate_quality") as mock_quality:
             mock_quality.return_value = {"passed": True, "metrics": {}}
 
             try:
@@ -829,14 +845,18 @@ async def test_synthesis_citation_validity_cardiovascular_query(
     )
 
     with (
-        patch.object(service, "_get_optimizer") as mock_optimizer,
-        patch.object(service, "_get_client") as mock_client,
-        patch.object(service, "_get_ranker") as mock_ranker,
-        patch.object(service, "_get_acquisition_agent") as mock_acquisition,
-        patch.object(service, "_get_processing_agent") as mock_processing,
-        patch.object(service, "_get_retriever") as mock_retriever,
-        patch.object(service, "_get_reranker") as mock_reranker,
-        patch.object(service, "_get_synthesis_agent") as mock_synthesis,
+        patch.object(service.discovery_service, "_get_optimizer") as mock_optimizer,
+        patch.object(service.discovery_service, "_get_client") as mock_client,
+        patch.object(service.discovery_service, "_get_ranker") as mock_ranker,
+        patch.object(
+            service.ingestion_service, "_get_acquisition_agent"
+        ) as mock_acquisition,
+        patch.object(
+            service.ingestion_service, "_get_processing_agent"
+        ) as mock_processing,
+        patch.object(service.rag_service, "_get_retriever") as mock_retriever,
+        patch.object(service.rag_service, "_get_reranker") as mock_reranker,
+        patch.object(service.rag_service, "_get_synthesis_agent") as mock_synthesis,
     ):
         # Setup mocks
         optimizer_instance = MagicMock()
@@ -894,7 +914,7 @@ async def test_synthesis_citation_validity_cardiovascular_query(
         synthesis_instance.synthesize = AsyncMock(return_value=synthesis_answer)
         mock_synthesis.return_value = synthesis_instance
 
-        with patch("services.query_service.validate_quality") as mock_quality:
+        with patch("services.discovery_service.validate_quality") as mock_quality:
             mock_quality.return_value = {"passed": True, "metrics": {}}
 
             try:
@@ -977,14 +997,18 @@ async def test_synthesis_no_citations_warns(
     )
 
     with (
-        patch.object(service, "_get_optimizer") as mock_optimizer,
-        patch.object(service, "_get_client") as mock_client,
-        patch.object(service, "_get_ranker") as mock_ranker,
-        patch.object(service, "_get_acquisition_agent") as mock_acquisition,
-        patch.object(service, "_get_processing_agent") as mock_processing,
-        patch.object(service, "_get_retriever") as mock_retriever,
-        patch.object(service, "_get_reranker") as mock_reranker,
-        patch.object(service, "_get_synthesis_agent") as mock_synthesis,
+        patch.object(service.discovery_service, "_get_optimizer") as mock_optimizer,
+        patch.object(service.discovery_service, "_get_client") as mock_client,
+        patch.object(service.discovery_service, "_get_ranker") as mock_ranker,
+        patch.object(
+            service.ingestion_service, "_get_acquisition_agent"
+        ) as mock_acquisition,
+        patch.object(
+            service.ingestion_service, "_get_processing_agent"
+        ) as mock_processing,
+        patch.object(service.rag_service, "_get_retriever") as mock_retriever,
+        patch.object(service.rag_service, "_get_reranker") as mock_reranker,
+        patch.object(service.rag_service, "_get_synthesis_agent") as mock_synthesis,
     ):
         # Setup mocks (simplified)
         optimizer_instance = MagicMock()
@@ -1038,7 +1062,7 @@ async def test_synthesis_no_citations_warns(
         synthesis_instance.synthesize = AsyncMock(return_value=answer_without_citations)
         mock_synthesis.return_value = synthesis_instance
 
-        with patch("services.query_service.validate_quality") as mock_quality:
+        with patch("services.discovery_service.validate_quality") as mock_quality:
             mock_quality.return_value = {"passed": True, "metrics": {}}
 
             result = await service.process_query("test query about fasting")

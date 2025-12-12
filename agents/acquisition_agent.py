@@ -67,82 +67,78 @@ class AcquisitionAgent:
         start_all = time.monotonic()
 
         async with AsyncSession(impersonate="chrome110", headers=HEADERS) as session:
-            for idx, paper in enumerate(finalists):
-
-                # ============================================
-                # BASE: Always create abstract passage
-                # ============================================
+            # 1. First, add abstracts for ALL finalists (fast, synchronous)
+            for paper in finalists:
                 abstract_text = paper.get("abstract", "")
+                if abstract_text:
+                    abstract_passage = dict(paper)
+                    abstract_passage.update(
+                        {
+                            "text": abstract_text,
+                            "text_source": "abstract",
+                            "extraction_error": None,
+                        }
+                    )
+                    final_passages.append(abstract_passage)
 
-                # Create abstract passage with full metadata preservation
-                abstract_passage = dict(paper)  # Copy all original fields
-                abstract_passage.update(
-                    {
-                        "text": abstract_text,
-                        "text_source": "abstract",
-                        "extraction_error": None,
-                    }
+            # 2. Concurrent PDF acquisition for top candidates
+            # We try the top 12 candidates to get our target of 5 PDFs
+            pdf_candidates = [
+                (idx, p) for idx, p in enumerate(finalists) if self._has_pdf_url(p)
+            ][:12]
+
+            if pdf_candidates:
+                logger.info(
+                    "Attempting concurrent PDF download for top {n} candidates",
+                    n=len(pdf_candidates),
                 )
-                final_passages.append(abstract_passage)
 
-                # ============================================
-                # BONUS: Attempt PDF upgrade (max 5)
-                # ============================================
-                if acquired_pdfs < TARGET_PDF_COUNT and self._has_pdf_url(paper):
+                async def fetch_pdf_safe(idx, paper):
                     try:
-                        logger.debug(
-                            "Attempting PDF download for paper {i}/{n}",
-                            i=idx + 1,
-                            n=len(finalists),
-                        )
-
-                        # Reuse existing _process_single method with timeout
-                        pdf_result = await asyncio.wait_for(
+                        return await asyncio.wait_for(
                             self._process_single(paper, session),
                             timeout=self.PER_PDF_TIMEOUT,
                         )
-
-                        if pdf_result and pdf_result.get("text"):
-                            # PDF success - add full-text passage
-                            final_passages.append(pdf_result)
-                            acquired_pdfs += 1
-                            paper_title = paper.get("title", "Unknown")[:60]
-                            logger.info(
-                                "PDF acquired ({a}/{t}): {title}",
-                                a=acquired_pdfs,
-                                t=TARGET_PDF_COUNT,
-                                title=paper_title,
-                            )
-                        else:
-                            logger.debug(
-                                "PDF download returned empty content for paper {i}",
-                                i=idx + 1,
-                            )
-
-                    except asyncio.TimeoutError:
+                    except (asyncio.TimeoutError, asyncio.CancelledError):
                         logger.warning(
-                            "PDF download timeout for paper {i}, gracefully degrading to abstract",
-                            i=idx + 1,
+                            f"Timeout/Cancelled while downloading PDF for paper {idx + 1}"
                         )
+                        return None
                     except Exception as e:
                         logger.warning(
-                            "PDF download failed for paper {i}, gracefully degrading to abstract: {err}",
-                            i=idx + 1,
-                            err=str(e),
+                            f"Error downloading PDF for paper {idx + 1}: {e}"
                         )
-                        # Abstract already added - continue without error
+                        return None
 
-                elif acquired_pdfs >= TARGET_PDF_COUNT:
-                    logger.debug(
-                        "Target PDF count reached ({t}), skipping remaining PDF attempts",
-                        t=TARGET_PDF_COUNT,
-                    )
+                # Launch all tasks concurrently
+                tasks = [fetch_pdf_safe(idx, p) for idx, p in pdf_candidates]
+                results = await asyncio.gather(*tasks)
+
+                # Collect successful results up to target
+                for res in results:
+                    # We can restrict the number of acquired PDFs here
+                    if acquired_pdfs >= TARGET_PDF_COUNT:
+                        break
+
+                    if res and res.get("text"):
+                        final_passages.append(res)
+                        acquired_pdfs += 1
+                        paper_title = res.get("title", "Unknown")[:60]
+                        logger.info(
+                            "PDF acquired ({a}/{t}): {title}",
+                            a=acquired_pdfs,
+                            t=TARGET_PDF_COUNT,
+                            title=paper_title,
+                        )
 
         elapsed = time.monotonic() - start_all
 
         # Update state.passages with final results
         new_state = state.model_copy(deep=True)
         new_state.passages = final_passages
+
+        if not final_passages:
+            new_state.append_error("Critical: No PDFs acquired")
 
         logger.info(
             "Acquisition complete: {total} total passages ({pdfs} PDFs, {abstracts} abstracts) in {sec:.2f}s",

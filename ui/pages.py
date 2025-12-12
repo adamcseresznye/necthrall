@@ -16,7 +16,7 @@ from ui.components import (
     SearchProgress,
 )
 from ui.policies import PRIVACY_POLICY, TERMS_OF_SERVICE
-from ui.constants import POSTHOG_SCRIPT, BUY_ME_COFFEE_WIDGET
+from ui.constants import POSTHOG_SCRIPT, KOFI_WIDGET
 
 # Path to logo directory
 LOGO_DIR = (
@@ -39,8 +39,8 @@ def init_ui(fastapi_app):
         # Inject custom CSS
         ui.add_head_html(f"<style>{CUSTOM_CSS}</style>")
 
-        # Inject Buy Me A Coffee widget
-        ui.add_body_html(BUY_ME_COFFEE_WIDGET)
+        # Inject Ko-fi widget
+        ui.add_body_html(KOFI_WIDGET)
 
         # Get client reference for connection checking
         client = context.client

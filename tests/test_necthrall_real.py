@@ -181,13 +181,29 @@ if __name__ == "__main__":
                 print("No data found.")
                 return
 
-            # Run for first entry
-            entry = data[0]
-            print(f"Testing query: {entry['input']}")
-            await test_necthrall_end_to_end(entry, service, judge)
-            print("Test passed!")
+            # Run for all entries and report per-entry results
+            failures = []
+            for i, entry in enumerate(data):
+                print(
+                    f"\n--- Running manual test {i+1}/{len(data)}: {entry['input']} ---"
+                )
+                try:
+                    await test_necthrall_end_to_end(entry, service, judge)
+                    print(f"Test {i+1} passed!")
+                except Exception as e:
+                    print(f"Test {i+1} failed: {e}")
+                    failures.append(
+                        {"index": i, "input": entry.get("input"), "error": str(e)}
+                    )
+                    import traceback
+
+                    traceback.print_exc()
+            if failures:
+                raise AssertionError(
+                    f"{len(failures)} manual tests failed: {[f['index'] for f in failures]}"
+                )
         except Exception as e:
-            print(f"Test failed: {e}")
+            print(f"Manual test run failed: {e}")
             import traceback
 
             traceback.print_exc()

@@ -50,7 +50,15 @@ def app(set_test_env):
 
     # Mock the embedding model
     mock_embedding_model = MagicMock()
+    mock_embedding_model.embed_dim = 384
     mock_embedding_model.encode.return_value = np.random.rand(384).astype(np.float32)
+
+    # Mock get_text_embedding_batch to return list of embeddings
+    def mock_get_embeddings(texts):
+        return [np.random.rand(384).tolist() for _ in texts]
+
+    mock_embedding_model.get_text_embedding_batch = mock_get_embeddings
+
     app.state.embedding_model = mock_embedding_model
 
     # Initialize query service with mock
@@ -74,10 +82,14 @@ class TestQueryEndpoint:
         """Test case 1: Valid query returns finalists with all expected fields."""
         # Mock all pipeline components for success path
         with (
-            patch("services.query_service.QueryOptimizationAgent") as mock_opt_class,
-            patch("services.query_service.SemanticScholarClient") as mock_client_class,
-            patch("services.query_service.validate_quality") as mock_quality,
-            patch("services.query_service.RankingAgent") as mock_ranker_class,
+            patch(
+                "services.discovery_service.QueryOptimizationAgent"
+            ) as mock_opt_class,
+            patch(
+                "services.discovery_service.SemanticScholarClient"
+            ) as mock_client_class,
+            patch("services.discovery_service.validate_quality") as mock_quality,
+            patch("services.discovery_service.RankingAgent") as mock_ranker_class,
         ):
 
             # Setup mocks
@@ -154,9 +166,13 @@ class TestQueryEndpoint:
     def test_quality_gate_failure_returns_early(self, client: TestClient):
         """Test case 2: Quality gate failure returns early with reason (no finalists)."""
         with (
-            patch("services.query_service.QueryOptimizationAgent") as mock_opt_class,
-            patch("services.query_service.SemanticScholarClient") as mock_client_class,
-            patch("services.query_service.validate_quality") as mock_quality,
+            patch(
+                "services.discovery_service.QueryOptimizationAgent"
+            ) as mock_opt_class,
+            patch(
+                "services.discovery_service.SemanticScholarClient"
+            ) as mock_client_class,
+            patch("services.discovery_service.validate_quality") as mock_quality,
         ):
 
             mock_opt = MagicMock()
@@ -196,7 +212,9 @@ class TestQueryEndpoint:
 
     def test_query_optimization_error_returns_500(self, client: TestClient):
         """Test case 3: Query optimization failure returns 500 with user-friendly message."""
-        with patch("services.query_service.QueryOptimizationAgent") as mock_opt_class:
+        with patch(
+            "services.discovery_service.QueryOptimizationAgent"
+        ) as mock_opt_class:
             mock_opt = MagicMock()
             mock_opt.generate_dual_queries = AsyncMock(
                 side_effect=Exception("LLM service unavailable")
@@ -212,8 +230,12 @@ class TestQueryEndpoint:
     def test_semantic_scholar_error_returns_503(self, client: TestClient):
         """Test case 4: Semantic Scholar API failure returns 503 with user-friendly message."""
         with (
-            patch("services.query_service.QueryOptimizationAgent") as mock_opt_class,
-            patch("services.query_service.SemanticScholarClient") as mock_client_class,
+            patch(
+                "services.discovery_service.QueryOptimizationAgent"
+            ) as mock_opt_class,
+            patch(
+                "services.discovery_service.SemanticScholarClient"
+            ) as mock_client_class,
         ):
 
             mock_opt = MagicMock()
@@ -242,9 +264,13 @@ class TestQueryEndpoint:
     def test_quality_gate_error_returns_500(self, client: TestClient):
         """Test case 5: Quality gate validation error returns 500."""
         with (
-            patch("services.query_service.QueryOptimizationAgent") as mock_opt_class,
-            patch("services.query_service.SemanticScholarClient") as mock_client_class,
-            patch("services.query_service.validate_quality") as mock_quality,
+            patch(
+                "services.discovery_service.QueryOptimizationAgent"
+            ) as mock_opt_class,
+            patch(
+                "services.discovery_service.SemanticScholarClient"
+            ) as mock_client_class,
+            patch("services.discovery_service.validate_quality") as mock_quality,
         ):
 
             mock_opt = MagicMock()
@@ -275,10 +301,14 @@ class TestQueryEndpoint:
     def test_ranking_error_returns_500(self, client: TestClient):
         """Test case 6: Ranking error returns 500."""
         with (
-            patch("services.query_service.QueryOptimizationAgent") as mock_opt_class,
-            patch("services.query_service.SemanticScholarClient") as mock_client_class,
-            patch("services.query_service.validate_quality") as mock_quality,
-            patch("services.query_service.RankingAgent") as mock_ranker_class,
+            patch(
+                "services.discovery_service.QueryOptimizationAgent"
+            ) as mock_opt_class,
+            patch(
+                "services.discovery_service.SemanticScholarClient"
+            ) as mock_client_class,
+            patch("services.discovery_service.validate_quality") as mock_quality,
+            patch("services.discovery_service.RankingAgent") as mock_ranker_class,
         ):
 
             mock_opt = MagicMock()

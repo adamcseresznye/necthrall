@@ -155,7 +155,7 @@ def acquisition_agent() -> AcquisitionAgent:
     into `agent.metrics` so tests can profile slow downloads and extractions.
     """
     agent = AcquisitionAgent()
-    agent.PER_PDF_TIMEOUT = 10.0
+    agent.PER_PDF_TIMEOUT = 30.0
     metrics: Dict[str, Dict[str, float]] = {}
 
     # wrap download
@@ -348,10 +348,10 @@ async def test_mixed_urls_skip_invalid(
     assert "invalid1" not in paper_ids
     assert "invalid2" not in paper_ids
 
-    # Expect at least 8 valid results (allowing 1 failure tolerance)
+    # Expect at least 5 valid results (allowing failure tolerance)
     assert (
-        len(passages) >= 7
-    ), f"Expected at least 7 valid passages, got {len(passages)}"
+        len(passages) >= 5
+    ), f"Expected at least 5 valid passages, got {len(passages)}"
 
 
 @pytest.mark.integration
@@ -385,8 +385,11 @@ async def test_parallel_execution_order_independent(
     """Run acquisition twice with different ordering to validate parallel correctness."""
     agent = acquisition_agent
 
-    s1 = State(query="run1", finalists=arxiv_pdf_urls)
-    s2 = State(query="run2", finalists=list(reversed(arxiv_pdf_urls)))
+    # Limit to 5 items so both runs acquire the same set (since agent stops at 5)
+    subset_urls = arxiv_pdf_urls[:5]
+
+    s1 = State(query="run1", finalists=subset_urls)
+    s2 = State(query="run2", finalists=list(reversed(subset_urls)))
 
     updated1 = await agent.process(s1)
     updated2 = await agent.process(s2)

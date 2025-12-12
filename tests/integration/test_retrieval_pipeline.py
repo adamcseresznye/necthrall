@@ -340,13 +340,17 @@ async def test_full_pipeline_with_mocked_stages(
     service = QueryService(embedding_model=mock_embedding_model)
 
     with (
-        patch.object(service, "_get_optimizer") as mock_optimizer,
-        patch.object(service, "_get_client") as mock_client,
-        patch.object(service, "_get_ranker") as mock_ranker,
-        patch.object(service, "_get_acquisition_agent") as mock_acquisition,
-        patch.object(service, "_get_processing_agent") as mock_processing,
-        patch.object(service, "_get_retriever") as mock_retriever,
-        patch.object(service, "_get_reranker") as mock_reranker,
+        patch.object(service.discovery_service, "_get_optimizer") as mock_optimizer,
+        patch.object(service.discovery_service, "_get_client") as mock_client,
+        patch.object(service.discovery_service, "_get_ranker") as mock_ranker,
+        patch.object(
+            service.ingestion_service, "_get_acquisition_agent"
+        ) as mock_acquisition,
+        patch.object(
+            service.ingestion_service, "_get_processing_agent"
+        ) as mock_processing,
+        patch.object(service.rag_service, "_get_retriever") as mock_retriever,
+        patch.object(service.rag_service, "_get_reranker") as mock_reranker,
     ):
         optimizer_instance = MagicMock()
         optimizer_instance.generate_dual_queries = AsyncMock(
@@ -396,7 +400,7 @@ async def test_full_pipeline_with_mocked_stages(
         mock_reranker.return_value = reranker_instance
 
         # Patch validate_quality
-        with patch("services.query_service.validate_quality") as mock_quality:
+        with patch("services.discovery_service.validate_quality") as mock_quality:
             mock_quality.return_value = {"passed": True, "metrics": {}}
 
             # Act
@@ -476,9 +480,9 @@ async def test_pipeline_with_no_finalists(mock_embedding_model):
     service = QueryService(embedding_model=mock_embedding_model)
 
     with (
-        patch.object(service, "_get_optimizer") as mock_optimizer,
-        patch.object(service, "_get_client") as mock_client,
-        patch.object(service, "_get_ranker") as mock_ranker,
+        patch.object(service.discovery_service, "_get_optimizer") as mock_optimizer,
+        patch.object(service.discovery_service, "_get_client") as mock_client,
+        patch.object(service.discovery_service, "_get_ranker") as mock_ranker,
     ):
         optimizer_instance = MagicMock()
         optimizer_instance.generate_dual_queries = AsyncMock(
@@ -499,7 +503,7 @@ async def test_pipeline_with_no_finalists(mock_embedding_model):
         ranker_instance.rank_papers.return_value = []
         mock_ranker.return_value = ranker_instance
 
-        with patch("services.query_service.validate_quality") as mock_quality:
+        with patch("services.discovery_service.validate_quality") as mock_quality:
             mock_quality.return_value = {"passed": True, "metrics": {}}
 
             # Act
@@ -541,10 +545,12 @@ async def test_pipeline_with_pdf_acquisition_failure(
     service = QueryService(embedding_model=mock_embedding_model)
 
     with (
-        patch.object(service, "_get_optimizer") as mock_optimizer,
-        patch.object(service, "_get_client") as mock_client,
-        patch.object(service, "_get_ranker") as mock_ranker,
-        patch.object(service, "_get_acquisition_agent") as mock_acquisition,
+        patch.object(service.discovery_service, "_get_optimizer") as mock_optimizer,
+        patch.object(service.discovery_service, "_get_client") as mock_client,
+        patch.object(service.discovery_service, "_get_ranker") as mock_ranker,
+        patch.object(
+            service.ingestion_service, "_get_acquisition_agent"
+        ) as mock_acquisition,
     ):
         optimizer_instance = MagicMock()
         optimizer_instance.generate_dual_queries = AsyncMock(
@@ -578,7 +584,7 @@ async def test_pipeline_with_pdf_acquisition_failure(
         acquisition_instance.process = AsyncMock(side_effect=mock_acquire_fail)
         mock_acquisition.return_value = acquisition_instance
 
-        with patch("services.query_service.validate_quality") as mock_quality:
+        with patch("services.discovery_service.validate_quality") as mock_quality:
             mock_quality.return_value = {"passed": True, "metrics": {}}
 
             # Act
@@ -612,11 +618,15 @@ async def test_pipeline_with_no_chunks_generated(
     service = QueryService(embedding_model=mock_embedding_model)
 
     with (
-        patch.object(service, "_get_optimizer") as mock_optimizer,
-        patch.object(service, "_get_client") as mock_client,
-        patch.object(service, "_get_ranker") as mock_ranker,
-        patch.object(service, "_get_acquisition_agent") as mock_acquisition,
-        patch.object(service, "_get_processing_agent") as mock_processing,
+        patch.object(service.discovery_service, "_get_optimizer") as mock_optimizer,
+        patch.object(service.discovery_service, "_get_client") as mock_client,
+        patch.object(service.discovery_service, "_get_ranker") as mock_ranker,
+        patch.object(
+            service.ingestion_service, "_get_acquisition_agent"
+        ) as mock_acquisition,
+        patch.object(
+            service.ingestion_service, "_get_processing_agent"
+        ) as mock_processing,
     ):
         optimizer_instance = MagicMock()
         optimizer_instance.generate_dual_queries = AsyncMock(
@@ -658,7 +668,7 @@ async def test_pipeline_with_no_chunks_generated(
         processing_instance.process = MagicMock(side_effect=mock_process_empty)
         mock_processing.return_value = processing_instance
 
-        with patch("services.query_service.validate_quality") as mock_quality:
+        with patch("services.discovery_service.validate_quality") as mock_quality:
             mock_quality.return_value = {"passed": True, "metrics": {}}
 
             # Act
@@ -699,13 +709,17 @@ async def test_pipeline_performance(
     service = QueryService(embedding_model=mock_embedding_model)
 
     with (
-        patch.object(service, "_get_optimizer") as mock_optimizer,
-        patch.object(service, "_get_client") as mock_client,
-        patch.object(service, "_get_ranker") as mock_ranker,
-        patch.object(service, "_get_acquisition_agent") as mock_acquisition,
-        patch.object(service, "_get_processing_agent") as mock_processing,
-        patch.object(service, "_get_retriever") as mock_retriever,
-        patch.object(service, "_get_reranker") as mock_reranker,
+        patch.object(service.discovery_service, "_get_optimizer") as mock_optimizer,
+        patch.object(service.discovery_service, "_get_client") as mock_client,
+        patch.object(service.discovery_service, "_get_ranker") as mock_ranker,
+        patch.object(
+            service.ingestion_service, "_get_acquisition_agent"
+        ) as mock_acquisition,
+        patch.object(
+            service.ingestion_service, "_get_processing_agent"
+        ) as mock_processing,
+        patch.object(service.rag_service, "_get_retriever") as mock_retriever,
+        patch.object(service.rag_service, "_get_reranker") as mock_reranker,
     ):
         # Setup all mocks
         optimizer_instance = MagicMock()
@@ -755,7 +769,7 @@ async def test_pipeline_performance(
         reranker_instance.rerank.return_value = mock_reranked_results
         mock_reranker.return_value = reranker_instance
 
-        with patch("services.query_service.validate_quality") as mock_quality:
+        with patch("services.discovery_service.validate_quality") as mock_quality:
             mock_quality.return_value = {"passed": True, "metrics": {}}
 
             # Act
@@ -814,9 +828,9 @@ async def test_pipeline_without_embedding_model(mock_finalists):
     service = QueryService(embedding_model=None)
 
     with (
-        patch.object(service, "_get_optimizer") as mock_optimizer,
-        patch.object(service, "_get_client") as mock_client,
-        patch.object(service, "_get_ranker") as mock_ranker,
+        patch.object(service.discovery_service, "_get_optimizer") as mock_optimizer,
+        patch.object(service.discovery_service, "_get_client") as mock_client,
+        patch.object(service.discovery_service, "_get_ranker") as mock_ranker,
     ):
         optimizer_instance = MagicMock()
         optimizer_instance.generate_dual_queries = AsyncMock(
@@ -839,7 +853,7 @@ async def test_pipeline_without_embedding_model(mock_finalists):
         ranker_instance.rank_papers.return_value = mock_finalists
         mock_ranker.return_value = ranker_instance
 
-        with patch("services.query_service.validate_quality") as mock_quality:
+        with patch("services.discovery_service.validate_quality") as mock_quality:
             mock_quality.return_value = {"passed": True, "metrics": {}}
 
             # Act
@@ -918,13 +932,17 @@ The intermittent fasting group showed significant reductions in blood pressure
     service = QueryService(embedding_model=mock_embedding_model)
 
     with (
-        patch.object(service, "_get_optimizer") as mock_optimizer,
-        patch.object(service, "_get_client") as mock_client,
-        patch.object(service, "_get_ranker") as mock_ranker,
-        patch.object(service, "_get_acquisition_agent") as mock_acquisition,
-        patch.object(service, "_get_processing_agent") as mock_processing,
-        patch.object(service, "_get_retriever") as mock_retriever,
-        patch.object(service, "_get_reranker") as mock_reranker,
+        patch.object(service.discovery_service, "_get_optimizer") as mock_optimizer,
+        patch.object(service.discovery_service, "_get_client") as mock_client,
+        patch.object(service.discovery_service, "_get_ranker") as mock_ranker,
+        patch.object(
+            service.ingestion_service, "_get_acquisition_agent"
+        ) as mock_acquisition,
+        patch.object(
+            service.ingestion_service, "_get_processing_agent"
+        ) as mock_processing,
+        patch.object(service.rag_service, "_get_retriever") as mock_retriever,
+        patch.object(service.rag_service, "_get_reranker") as mock_reranker,
     ):
         optimizer_instance = MagicMock()
         optimizer_instance.generate_dual_queries = AsyncMock(
@@ -974,7 +992,7 @@ The intermittent fasting group showed significant reductions in blood pressure
         reranker_instance.rerank.return_value = partial_reranked
         mock_reranker.return_value = reranker_instance
 
-        with patch("services.query_service.validate_quality") as mock_quality:
+        with patch("services.discovery_service.validate_quality") as mock_quality:
             mock_quality.return_value = {"passed": True, "metrics": {}}
 
             # Act
@@ -1028,13 +1046,17 @@ async def test_pipeline_result_structure(
     service = QueryService(embedding_model=mock_embedding_model)
 
     with (
-        patch.object(service, "_get_optimizer") as mock_optimizer,
-        patch.object(service, "_get_client") as mock_client,
-        patch.object(service, "_get_ranker") as mock_ranker,
-        patch.object(service, "_get_acquisition_agent") as mock_acquisition,
-        patch.object(service, "_get_processing_agent") as mock_processing,
-        patch.object(service, "_get_retriever") as mock_retriever,
-        patch.object(service, "_get_reranker") as mock_reranker,
+        patch.object(service.discovery_service, "_get_optimizer") as mock_optimizer,
+        patch.object(service.discovery_service, "_get_client") as mock_client,
+        patch.object(service.discovery_service, "_get_ranker") as mock_ranker,
+        patch.object(
+            service.ingestion_service, "_get_acquisition_agent"
+        ) as mock_acquisition,
+        patch.object(
+            service.ingestion_service, "_get_processing_agent"
+        ) as mock_processing,
+        patch.object(service.rag_service, "_get_retriever") as mock_retriever,
+        patch.object(service.rag_service, "_get_reranker") as mock_reranker,
     ):
         optimizer_instance = MagicMock()
         optimizer_instance.generate_dual_queries = AsyncMock(
@@ -1083,7 +1105,7 @@ async def test_pipeline_result_structure(
         reranker_instance.rerank.return_value = mock_reranked_results
         mock_reranker.return_value = reranker_instance
 
-        with patch("services.query_service.validate_quality") as mock_quality:
+        with patch("services.discovery_service.validate_quality") as mock_quality:
             mock_quality.return_value = {"passed": True, "metrics": {}}
 
             # Act
