@@ -115,6 +115,7 @@ async def test_necthrall_end_to_end(entry, app_service, llm_judge):
         input=input_query,
         actual_output=actual_answer,
         retrieval_context=retrieved_passages,
+        expected_output=expected_output,
     )
 
     # Initialize Metrics

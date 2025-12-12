@@ -117,6 +117,7 @@ def init_ui(fastapi_app):
         # State containers
         results_container = None
         example_queries_row = None
+        search_container_ui = None
 
         def is_connected() -> bool:
             """Check if the client is still connected (soft check)."""
@@ -146,6 +147,10 @@ def init_ui(fastapi_app):
             # Hide search container to focus on progress
             if search_container_ui:
                 search_container_ui.set_visibility(False)
+
+            # Hide the example queries immediately so they vanish during loading
+            if example_queries_row:
+                example_queries_row.set_visibility(False)
 
             # Show progress stepper
             progress_ui = None
@@ -181,10 +186,6 @@ def init_ui(fastapi_app):
                 # Restore search container
                 if search_container_ui:
                     search_container_ui.set_visibility(True)
-
-                # Ensure example queries remain hidden after search
-                if example_queries_row:
-                    example_queries_row.set_visibility(False)
 
                 with results_container:
                     if result.success and result.answer:
@@ -300,28 +301,44 @@ def init_ui(fastapi_app):
                     ).classes(
                         "text-base md:text-lg text-slate-500 max-w-full md:max-w-2xl text-center md:text-left break-words"
                     )
-            # --- HERO SECTION END ---
-            # Search container
-            with ui.column().classes("search-container") as search_container_ui:
-                # Search wrapper
-                with ui.row().classes("search-wrapper w-full items-center gap-2"):
-                    ui.icon("search", size="sm").classes("text-slate-400 ml-3")
-                    search_input = (
-                        ui.input(
-                            placeholder="cardiovascular effects of intermittent fasting"
-                        )
-                        .classes("search-input flex-grow")
-                        .props("borderless dense")
+                # --- HERO SECTION END ---
+                # Search container
+                with ui.row().classes(
+                    "w-full max-w-2xl items-center bg-white rounded-full border border-slate-200 shadow-sm "
+                    "pl-3 pr-1 py-1 gap-1 "
+                    "md:pl-5 md:pr-2 md:py-1.5 md:gap-2 "
+                    "focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 transition-all "
+                    "no-wrap"
+                ):
+                    # 1. Search Icon
+                    ui.icon("search").classes(
+                        "text-slate-400 shrink-0 " "text-lg md:text-xl"
                     )
+
+                    # 2. Input Field
+                    search_input = (
+                        ui.input(placeholder="What would you like to research today?")
+                        .classes("flex-grow min-w-0")
+                        .props(
+                            "borderless dense "
+                            "input-style='font-size: 16px; text-overflow: ellipsis;' "
+                            "input-class='placeholder-slate-400'"
+                        )
+                    )
+
+                    # 3. Search Button
+                    ui.button("Search", on_click=handle_search).props(
+                        "flat dense rounded color=primary"
+                    ).classes(
+                        "font-bold shrink-0 " "px-3 text-sm " "md:px-6 md:text-base"
+                    )
+
+                    # Bind Enter key
                     search_input.on("keydown.enter", handle_search)
 
-                    ui.button("Search", on_click=handle_search).classes(
-                        "search-btn mr-1"
-                    )
-
-                # Example queries
+                # 2. Example Queries Row (Centered Below)
                 example_queries_row = ui.row().classes(
-                    "example-queries gap-2 mt-4 flex-wrap justify-center"
+                    "example-queries gap-2 mt-2 flex-wrap justify-center items-center"
                 )
                 with example_queries_row:
                     ui.label("Try:").classes("text-slate-400 text-sm")
@@ -337,7 +354,9 @@ def init_ui(fastapi_app):
                         ui.button(
                             example,
                             on_click=lambda e=example: set_example(e),
-                        ).props("flat dense").classes("example-btn")
+                        ).props("flat dense no-caps").classes(
+                            "example-btn text-slate-600 hover:text-primary text-sm bg-slate-50 rounded-full px-3"
+                        )
 
             # Results container
             results_container = ui.column().classes("w-full max-w-4xl mt-2")
