@@ -33,6 +33,10 @@ def init_ui(fastapi_app):
 
     @ui.page("/")
     async def index_page():
+        # Inject Eva Icons CSS for the github icon
+        ui.add_head_html(
+            '<link href="https://unpkg.com/eva-icons@1.1.3/style/eva-icons.css" rel="stylesheet" />'
+        )
         # Inject PostHog analytics script
         ui.add_head_html(f"<script>{POSTHOG_SCRIPT}</script>")
 
@@ -134,6 +138,14 @@ def init_ui(fastapi_app):
 
             if not query_text:
                 ui.notify("Please enter a research question", type="warning")
+                return
+            # Basic validation: do not start pipeline for very short queries.
+            # Require at least 10 characters.
+            if len(query_text) < 10:
+                ui.notify(
+                    "Please provide a more specific query",
+                    type="warning",
+                )
                 return
 
             # Clear previous results
@@ -282,11 +294,19 @@ def init_ui(fastapi_app):
                     ),
                 )
 
-            # About button
-            ui.button("About", on_click=about_dialog.open).props("flat").classes(
-                "text-slate-600 font-semibold "
-                "lg:absolute lg:right-8 lg:top-1/2 lg:-translate-y-1/2"
-            )
+            # About button + GitHub icon
+            with ui.row().classes(
+                "items-center gap-2 lg:absolute lg:right-8 lg:top-1/2 lg:-translate-y-1/2"
+            ):
+                ui.button("About", on_click=about_dialog.open).props("flat").classes(
+                    "text-slate-600 font-semibold"
+                )
+
+                # Small GitHub icon linking to the repo
+                with ui.link(
+                    target="https://github.com/adamcseresznye/necthrall", new_tab=True
+                ):
+                    ui.icon("eva-github").style("font-size: 24px; color: #666;")
 
         # =====================================================================
         # MAIN CONTENT
@@ -495,10 +515,3 @@ def init_ui(fastapi_app):
                     ui.label("Terms of Service").classes(
                         "cursor-pointer hover:text-slate-800 text-sm"
                     ).on("click", terms_dialog.open)
-
-                    ui.label("|").classes("text-slate-300")
-
-                    ui.link(
-                        "GitHub",
-                        "https://github.com/adamcseresznye/necthrall",
-                    ).classes("text-slate-500 hover:text-slate-800 text-sm")
