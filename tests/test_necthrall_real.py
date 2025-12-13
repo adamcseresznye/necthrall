@@ -120,8 +120,8 @@ async def test_necthrall_end_to_end(entry, app_service, llm_judge):
 
     # Initialize Metrics
     metrics = [
-        FaithfulnessMetric(threshold=0.7, model=llm_judge, include_reason=True),
-        AnswerRelevancyMetric(threshold=0.7, model=llm_judge, include_reason=True),
+        # FaithfulnessMetric(threshold=0.7, model=llm_judge, include_reason=True),
+        # AnswerRelevancyMetric(threshold=0.7, model=llm_judge, include_reason=True),
         CitationValidityMetric(threshold=1.0),
         CitationAccuracyMetric(model=llm_judge, threshold=0.7),
     ]

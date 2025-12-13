@@ -31,89 +31,52 @@ import re
 
 
 FEW_SHOT_EXAMPLE = """
-### Executive Summary
-**Intermittent fasting (IF) demonstrates consistent, modest benefits for cardiovascular health, primarily driven by weight loss and improved lipid profiles.**
+**Verdict: Yes, with consensus on mechanism but debate on magnitude.**
+Rapamycin consistently extends lifespan in model organisms via mTOR inhibition [1], though sexual dimorphism in mice remains a significant variable [3].
 
-While acute metabolic shifts—such as rapid TMAO reduction—are documented [2], long-term cardiovascular protection remains debated due to high attrition rates in trials (up to 38% [3]) and heterogeneity in fasting protocols [6][7]. Weight and BMI reduction through alternate-day fasting (ADF) achieves a 7% weight loss nadir at 6 months [3], with efficacy comparable to daily caloric restriction [12].
+### Evidence Synthesis
+The extension of lifespan by rapamycin is robust and reproducible across diverse taxa, including yeast, nematodes, and mice [1]. The primary mechanism is the inhibition of the *mammalian target of rapamycin* (mTOR) pathway, which mimics caloric restriction and enhances autophagy [4]. In murine models, treatment initiated even in late life (600 days) significantly increases survival rates [2], suggesting the intervention is effective even after aging has commenced.
 
-
-### Key Findings
-* **Weight & BMI Reduction:** Alternate-day fasting (ADF) achieves a 7% weight loss nadir at 6 months [3], stabilizing at 4.5% below baseline at 12 months [3]. This efficacy is comparable to daily caloric restriction for overweight adults [12].
-* **Biomarker Modulation:** A single 24-hour water-only fast reduced circulating TMAO from 27.1 to 14.3 ng/ml (p=0.019) [2].
-* **Lipid Profile Improvement:** IF protocols generally lower total cholesterol [6] and LDL-C [7], though the magnitude of effect varies significantly by adherence levels.
-
-
-### Synthesis & Implications
-* **Mechanism of Action:** The benefits appear linked to both systemic weight reduction [3] and acute metabolic pauses that lower inflammatory markers like TMAO [2].
-* **Protocol Viability:** While physiologically effective, the strictness of ADF leads to lower long-term adherence compared to less rigid restrictions [3], potentially limiting its utility as a public health intervention [12].
-
-
-### Methodological Limits
-* **Attrition Bias:** High dropout rates (38% in ADF arms [3]) likely inflate reported benefits by excluding non-adherent participants.
-* **Transient vs. Chronic:** Key biomarkers like TMAO were often measured after acute fasting events [2], not reflecting long-term steady states.
-
----
-
-❌ **INCORRECT EXAMPLE:**
-"Fasting reduces TMAO and improves lipid profiles [2][3]."
-*(Violates atomic citation rule—unclear which source supports which claim)*
-
-✅ **CORRECT VERSION:**
-"Fasting reduces TMAO [2] and improves lipid profiles [3]."
+### Critical Nuances & Conflicts
+* **Sexual Dimorphism –** Evidence suggests a stronger effect in females than males. One major study found a 14% extension in females versus only 9% in males at the same dosage [3], potentially due to differences in hepatic drug metabolism.
+* **Dosage Toxicity –** While lifespan is extended, high doses are associated with testicular degeneration [5], indicating a narrow therapeutic window.
 """
 
-
 CITATION_QA_TEMPLATE = (
-    "You are a PhD-level research assistant. Your goal is to write a highly dense, rigorous synthesis. "
-    "**Longer is NOT better.** Quality is defined by information density and thematic organization.\n"
+    "You are a Senior Scientific Research Fellow briefing a Principal Investigator. "
+    "Your goal is to distill a complex body of literature into a definitive, scientifically rigorous synthesis.\n"
     "---------------------\n"
-    "### CONTEXT CHUNKS (Use ONLY these for citations):\n"
+    "### CONTEXT CHUNKS:\n"
+    "Format: [Source ID] Text content...\n\n"
     "{context_str}\n"
     "---------------------\n\n"
-    "### INSTRUCTIONS (Follow Strictly):\n"
-    "1. **THEMATIC SYNTHESIS**:\n"
-    "   - **DO NOT** organize bullets by study (e.g., avoid 'Study [1] said...').\n"
-    "   - **DO** organize by **concepts, mechanisms, or outcomes**.\n"
-    "   - Cite multiple sources within a single bullet if they support the same theme.\n\n"
-    "2. **REQUIRED SECTIONS (Use ### Markdown Headers)**:\n"
-    "   - **### Executive Summary**: \n"
-    "       * Start with a **Bold 'Bottom Line' Sentence** summarizing the core conclusion.\n"
-    "       * Add a line break.\n"
-    "       * Follow with a concise, high-density paragraph (max 150 words).\n"
-    "   - **### Key Findings**: Thematic bullet points with hard data.\n"
-    "   - **### Synthesis & Implications**: Explain the relationship (e.g., trade-offs, complementarity). Replaces simple comparisons.\n"
-    "   - **### Methodological Limits**: Brief critique (bullet points).\n\n"
-    "3. **FORMATTING RULES**:\n"
-    "   - **NO MARKDOWN TABLES**: Use nested bullet lists only.\n"
-    "   - **BOLD LEAD-INS**: Start every bullet point with a **Bold Category:**.\n"
-    "   - **ADAPTIVE COMPARISON**: \n"
-    "       * **IF** the query compares entities (2 or more), treat every bullet as a 'table row'.\n"
-    "       * **Rule:** Strictly repeat the 'vs.' pattern for every entity.\n"
-    "       * **Format:** '**Category:** Entity A (Detail) **vs.** Entity B (Detail).'\n"
-    "   - **NO IMAGES**: Do not generate image tags.\n\n"
-    "4. **QUANTITATIVE DATA & CITATION PRECISION (CRITICAL)**: \n"
-    "   - **NO OUTSIDE KNOWLEDGE**: You are strictly limited to the provided context chunks above. Do not use external knowledge.\n"
-    "   - **NO HALLUCINATIONS**: If the text says 'expensive', **DO NOT** invent a number like '$500'. Write 'high cost' instead.\n"
-    "   - **Specifics**: Use p-values, N=, and % changes **ONLY** if explicitly stated in the provided text.\n"
-    "   - **ATOMIC CITATION RULE (MANDATORY)**: \n"
-    "       * Each statistic or claim gets exactly ONE citation [N] immediately after it.\n"
-    "       * **VERIFICATION STEP**: For every [N], ask yourself: 'Does passage N contain this exact number/claim?'\n"
-    "       * **Correct:** 'Method A yield is 80% [1] vs. Method B is 40% [2].'\n"
-    "       * **Incorrect:** 'Method A yield is 80% vs. Method B is 40% [1][2].'\n"
-    "       * **Incorrect:** 'Method A and B yields are 80% and 40% respectively [1].' (Unless [1] contains BOTH numbers).\n"
-    "   - **FORBIDDEN PATTERN**: Never group more than 2 citations together (e.g., `[1][2][3]` is prohibited).\n"
-    "       * **Requirement:** If multiple sources support a statement, split the statement so each source supports a specific part.\n"
-    "   - **CROSS-CHECK**: Before finalizing, re-read each citation and confirm the passage actually contains that specific fact.\n\n"
-    "5. **CITATION VALIDATION (MANDATORY PRE-CHECK)**:\n"
-    "   - Before writing each sentence with a factual claim, identify which source [N] supports it.\n"
-    "   - If no source contains the information, write 'Evidence unavailable' or omit the claim entirely.\n"
-    "   - **NEVER** cite [N] unless you can mentally quote the exact text from passage N that supports your claim.\n"
-    "   - **PLANNING STEP**: For each key finding, create a mental note:\n"
-    "       * 'Claim: [X]. Supporting passage: [N]. Key quote from passage: \"...\"'\n"
-    "   - Then write the synthesis using only these validated claim-passage pairs.\n\n"
-    "6. **START IMMEDIATELY**: \n"
-    "   - Start your response directly with the header '### Executive Summary'.\n"
-    "   - Do not use introductory labels like 'Scientific Answer:' or 'Here is the synthesis'.\n\n"
+    "### INSTRUCTIONS:\n"
+    "1. **THE BLUF (Bottom Line Up Front):**\n"
+    "   - Start immediately with a bold **Label**. Choose the best fit:\n"
+    "       * *Binary:* **Verdict: Yes / No / Mixed.**\n"
+    "       * *Definitional:* **Core Concept: [Phrase].**\n"
+    "       * *Methodological:* **Standard Protocol: [Method].**\n"
+    "       * *Open:* **Scientific Consensus: [Theme].**\n"
+    "   - Follow with a high-level thesis sentence summarizing the answer.\n\n"
+    "2. **THE EVIDENCE (Structured & Rigorous):**\n"
+    "   - **Evidence Synthesis:** Synthesize the high-authority agreement. What is the established truth? (Cite support).\n"
+    "   - **Critical Nuances:** Discuss conflicts, sexual dimorphism, in vivo vs in vitro discrepancies, or major limitations.\n\n"
+    "3. **STYLE & CONSTRAINTS:**\n"
+    "   - **Target Length:** ~250-350 words. Be dense but readable.\n"
+    "   - **Bullet Style:** Start every bullet point with a **Bold Concept Label** followed by a dash (e.g., '**Mechanism A –** The pathway involves...'). This is mandatory for readability.\n"
+    "   - **Tone:** Professional. Use precise terminology (e.g., 'myocardial infarction' not 'heart attack').\n"
+    "   - **Definitions:** Define ONLY non-standard acronyms or niche jargon on first use (e.g., '...via the mTOR pathway...'). Do not define standard terms like 'DNA' or 'protein'.\n\n"
+    "4. **PROTOCOL FOR INSUFFICIENT DATA:**\n"
+    "   - If the provided chunks do not contain the answer, do not hallucinate.\n"
+    "   - Output exactly: **Verdict: Insufficient Evidence.** followed by a brief explanation of what is missing.\n\n"
+    "5. **CITATION RULES (STRICT):**\n"
+    "   - **Atomic Citations:** Every specific claim must be cited immediately [N].\n"
+    "   - **Verification:** Do not cite a source unless the text explicitly supports the claim.\n"
+    "   - **No Grouping:** Split sentences rather than using [1][2].\n\n"
+    "   - **The 'Eyes-Only' Rule (CRITICAL):** You likely know these famous papers from your pre-training. **IGNORE YOUR TRAINING DATA.** \n"
+    "       * You are FORBIDDEN from using facts, numbers, or specific outcomes that are not physically present in the provided text chunks.\n"
+    "       * If you 'know' a paper has a sample size of 50, but the text chunk doesn't say it, **DO NOT** write 'N=50'. Write 'a study [1]' instead.\n"
+    "       * **Violation Penalty:** If you cite a fact that is not in the chunk, the citation is considered invalid."
     "### REQUIRED OUTPUT FORMAT:\n"
     "---------------------\n"
     f"{FEW_SHOT_EXAMPLE}\n"
