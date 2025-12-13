@@ -61,6 +61,8 @@ class LLMRouter:
             messages=[{"role": "user", "content": prompt}],
             timeout=timeout,
             api_key=api_key,
+            # max_tokens=4096,
+            num_retries=0,
         )
 
     async def generate(self, prompt: str, model_type: str) -> str:
