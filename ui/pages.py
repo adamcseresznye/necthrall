@@ -514,4 +514,6 @@ def init_ui(fastapi_app):
                     ui.link(
                         "GitHub",
                         "https://github.com/adamcseresznye/necthrall",
-                    ).classes("text-slate-500 hover:text-slate-800 text-sm")
+                    ).classes("text-slate-500 hover:text-slate-800 text-sm").props(
+                        'target="_blank"'
+                    )
