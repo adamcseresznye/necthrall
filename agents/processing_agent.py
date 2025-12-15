@@ -79,12 +79,12 @@ class ProcessingAgent:
                 continue
 
             # Text truncation to save memory on large PDFs
-            # original_len = len(text)
-            # if original_len > 40000:
-            #    text = text[:40000]
-            #    logger.warning(
-            #        f"✂️ Truncated paper {paper_id} from {original_len} to 40000 chars to save memory"
-            #    )
+            original_len = len(text)
+            if original_len > 40000:
+                text = text[:40000]
+                logger.warning(
+                    f"✂️ Truncated paper {paper_id} from {original_len} to 40000 chars to save memory"
+                )
 
             had_nonempty_passage = True
 

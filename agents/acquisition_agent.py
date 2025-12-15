@@ -117,8 +117,8 @@ class AcquisitionAgent:
                 # Collect successful results up to target
                 for res in results:
                     # We can restrict the number of acquired PDFs here
-                    if acquired_pdfs >= TARGET_PDF_COUNT:
-                        break
+                    # if acquired_pdfs >= TARGET_PDF_COUNT:
+                    #    break
 
                     if res and res.get("text"):
                         final_passages.append(res)
