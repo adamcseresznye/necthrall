@@ -25,6 +25,7 @@ from typing import List
 from loguru import logger
 
 from llama_index.core.schema import NodeWithScore
+from config import RAG_RERANK_TOP_K
 
 from utils.llm_router import LLMRouter
 import re
@@ -46,10 +47,6 @@ CITATION_QA_TEMPLATE = (
     "You are a Senior Scientific Research Fellow briefing a Principal Investigator. "
     "Your goal is to distill a complex body of literature into a definitive, scientifically rigorous synthesis.\n"
     "---------------------\n"
-    "### CONTEXT CHUNKS:\n"
-    "Format: [Source ID] Text content...\n\n"
-    "{context_str}\n"
-    "---------------------\n\n"
     "### INSTRUCTIONS:\n"
     "1. **THE BLUF (Bottom Line Up Front):**\n"
     "   - Start immediately with a bold **Label**. Choose the best fit:\n"
@@ -63,25 +60,25 @@ CITATION_QA_TEMPLATE = (
     "   - **Critical Nuances:** Discuss conflicts, sexual dimorphism, in vivo vs in vitro discrepancies, or major limitations.\n\n"
     "3. **STYLE & CONSTRAINTS:**\n"
     "   - **Target Length:** ~250-350 words. Be dense but readable.\n"
-    "   - **Bullet Style:** Start every bullet point with a **Bold Concept Label** followed by a dash (e.g., '**Mechanism A –** The pathway involves...'). This is mandatory for readability.\n"
-    "   - **Tone:** Professional. Use precise terminology (e.g., 'myocardial infarction' not 'heart attack').\n"
-    "   - **Definitions:** Define ONLY non-standard acronyms or niche jargon on first use (e.g., '...via the mTOR pathway...'). Do not define standard terms like 'DNA' or 'protein'.\n\n"
+    "   - **Bullet Style:** Start every bullet point with a **Bold Concept Label** followed by a dash. Mandatory.\n"
+    "   - **Tone:** Professional. Use precise terminology.\n"
+    "   - **Definitions:** Define ONLY non-standard acronyms on first use.\n\n"
     "4. **PROTOCOL FOR INSUFFICIENT DATA:**\n"
     "   - If the provided chunks do not contain the answer, do not hallucinate.\n"
-    "   - Output exactly: **Verdict: Insufficient Evidence.** followed by a brief explanation of what is missing.\n\n"
+    "   - Output exactly: **Verdict: Insufficient Evidence.** followed by a brief explanation.\n\n"
     "5. **CITATION RULES (STRICT):**\n"
+    "   - **Valid Source Range:** You have access to Sources 1 through {max_id}. **ANY CITATION > {max_id} IS A HALLUCINATION.**\n"
     "   - **Atomic Citations:** Every specific claim must be cited immediately [N].\n"
     "   - **Verification:** Do not cite a source unless the text explicitly supports the claim.\n"
-    "   - **No Grouping:** Split sentences rather than using [1][2].\n\n"
-    "   - **The 'Eyes-Only' Rule (CRITICAL):** You likely know these famous papers from your pre-training. **IGNORE YOUR TRAINING DATA.** \n"
-    "       * You are FORBIDDEN from using facts, numbers, or specific outcomes that are not physically present in the provided text chunks.\n"
-    "       * If you 'know' a paper has a sample size of 50, but the text chunk doesn't say it, **DO NOT** write 'N=50'. Write 'a study [1]' instead.\n"
-    "       * **Violation Penalty:** If you cite a fact that is not in the chunk, the citation is considered invalid."
+    "   - **The 'Eyes-Only' Rule:** IGNORE YOUR TRAINING DATA. Use ONLY facts present in the text chunks.\n"
     "### REQUIRED OUTPUT FORMAT:\n"
     "---------------------\n"
     f"{FEW_SHOT_EXAMPLE}\n"
     "---------------------\n\n"
+    "### CONTEXT CHUNKS (Sources 1-{max_id}):\n"
+    "{context_str}\n\n"
     "User Query: {query_str}\n"
+    "Answer (using ONLY Sources 1-{max_id}):"
 )
 
 
@@ -139,8 +136,7 @@ class SynthesisAgent:
 
         # Build the full prompt
         prompt = CITATION_QA_TEMPLATE.format(
-            context_str=context_str,
-            query_str=query,
+            context_str=context_str, query_str=query, max_id=RAG_RERANK_TOP_K
         )
 
         logger.debug(
