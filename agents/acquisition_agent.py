@@ -31,7 +31,7 @@ class AcquisitionAgent:
       PDFs fail the State will receive a critical error via `append_error()`.
     """
 
-    PER_PDF_TIMEOUT = 3.0
+    PER_PDF_TIMEOUT = 30.0
     _CHUNK_SIZE = 32 * 1024
 
     async def process(self, state: State) -> State:
