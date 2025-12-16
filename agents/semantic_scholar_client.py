@@ -39,12 +39,12 @@ class SemanticScholarClient:
     - Deduplicate by `paperId`
     - Filter to papers with `openAccessPdf.url`
     - Request SPECTER2 embeddings via `fields`
-    - Use an asyncio.Semaphore(100) to rate-limit concurrent requests
+    - Use an asyncio.Semaphore(10) to rate-limit concurrent requests
 
     The client is intentionally small and uses aiohttp for async HTTP calls.
     """
 
-    def __init__(self, api_key: Optional[str] = None, *, rate_limit: int = 100) -> None:
+    def __init__(self, api_key: Optional[str] = None, *, rate_limit: int = 10) -> None:
         self.api_key = api_key
         # Global semaphore to cap concurrent outbound requests
         self._semaphore = asyncio.Semaphore(rate_limit)

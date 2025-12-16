@@ -138,51 +138,38 @@ class QueryOptimizationAgent:
         User input: "{query}"
 
         **Step 1: Extract Core Question**
-        If the user provided a long explanation or story, identify the central research question. Ignore narrative details, background context, or personal anecdotes. Focus ONLY on what scientific information they're seeking.
+        Identify the central research question. Ignore narrative details.
 
         **Step 2: Generate Four Query Variants**
-        Create four distinct search queries optimized for different purposes:
+        Create four distinct search queries. 
+        CRITICAL: Semantic Scholar is a strict keyword search engine. 
+        - DO NOT use boolean operators (AND, OR, +, -). 
+        - DO NOT use full sentences for the 'primary', 'broad', or 'alternative' queries.
+        - KEEP QUERIES SHORT (3-6 keywords max). Long queries return 0 results.
 
-        1. **final_rephrase**: Refined natural language query for semantic retrieval
-        - Purpose: A clear, grammatically correct question or statement for embedding-based search.
-        - Format: Full sentence or question structure. NOT a list of keywords.
-        - Action: Fix grammar, remove conversational fluff (e.g., "I was wondering if..."), and replace vague terms with precise scientific terminology.
-        - Example: "What are the molecular mechanisms linking intermittent fasting to cardiovascular disease risk?"
+        1. **final_rephrase**: Refined natural language query for semantic retrieval (Vector Search)
+        - Format: A clear, grammatically correct full sentence.
+        - Example: "What are the molecular mechanisms linking intermittent fasting to cardiovascular risk?"
 
-        2. **primary**: Precise keyword query for Semantic Scholar paper search
-        - Purpose: Exact matching in paper titles and abstracts
-        - Format: 3-8 keywords capturing the core concept
-        - Use specific technical terms that appear in academic papers
-        - Optimized for Semantic Scholar's ranking algorithm
-        - Example: "intermittent fasting cardiovascular risks"
+        2. **primary**: Precise keyword query
+        - Format: 3-6 specific keywords.
+        - Purpose: High precision matches.
+        - Example: "intermittent fasting cardiovascular risk"
 
-        3. **broad**: Expanded query for comprehensive Semantic Scholar coverage
-        - Purpose: Capturing related research and broader context
-        - Format: 5-12 keywords including synonyms and related concepts
-        - Include alternative terminology, related methods, and broader categories
-        - Optimized for Semantic Scholar's keyword matching
-        - Example: "fasting protocols cardiovascular health metabolic effects time-restricted eating"
+        3. **broad**: Expanded query
+        - Format: 3-5 broad keywords or synonyms.
+        - Purpose: High recall / category search.
+        - Example: "time restricted eating metabolic health"
 
-        4. **alternative**: Critical perspective and comparative search
-        - Purpose: Finding conflicting evidence, limitations, and direct comparisons to standard care.
-        - Format: 4-10 keywords focusing on "vs", "safety", "side effects", or "limitations"
-        - Action: If the topic is a treatment (e.g., "fasting"), search for risks or comparisons (e.g., "intermittent fasting vs calorie restriction safety").
-        - Optimized for: Finding the "Safety" and "Comparison" sections often missing from basic searches.
-        - Example: "intermittent fasting side effects safety long-term risks vs caloric restriction"
-
-        **Semantic Scholar Query Best Practices:**
-        - Use quotes for exact phrases: "red blood cell"
-        - Use + for required terms: +cardiovascular
-        - Use - to exclude terms: -animal (for human studies only)
-        - Keep queries between 3-12 keywords for optimal results
-        - Match terminology commonly found in paper titles/abstracts
-        - Keep PRIMARY/BROAD/ALTERNATIVE variants focused on the core topic. Avoid expanding into loosely related subtopics. 
+        4. **alternative**: Critical/Comparative query
+        - Format: 3-6 keywords focusing on limitations or debates.
+        - Purpose: Finding conflicting evidence or specific metrics.
+        - Example: "fasting caloric restriction comparison safety"
 
         **IMPORTANT FORMATTING RULES:**
         - Return ONLY valid JSON.
-        - Use DOUBLE QUOTES for all keys and string values (e.g., "key": "value").
-        - Do not use single quotes.
-        - No markdown formatting or explanation text.
+        - Use DOUBLE QUOTES for all keys and string values.
+        - No markdown.
 
         {{
         "final_rephrase": "...",
