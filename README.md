@@ -21,6 +21,16 @@ pinned: false
   <strong><a href="https://necthrall-ai.hf.space">🔴 Live Demo on Hugging Face</a></strong>
 </div>
 
+## 🎥 Video Demo
+
+<div align="center">
+  <a href="https://www.youtube.com/shorts/z6Bg-02ml8w">
+    <img src="https://img.youtube.com/vi/z6Bg-02ml8w/0.jpg" alt="Necthrall Demo Video" width="300"/>
+  </a>
+  <br>
+  <i>Watch Necthrall retrieve, analyze, and cite full-text scientific papers in real time.</i>
+</div>
+
 ---
 
 ## ⚡ Key Features
