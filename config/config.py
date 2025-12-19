@@ -49,7 +49,7 @@ SECONDARY_LLM_API_KEY = os.getenv("SECONDARY_LLM_API_KEY")
 # ============================================================================
 # RAG Configuration
 # ============================================================================
-RAG_RETRIEVAL_TOP_K = int(os.getenv("RAG_RETRIEVAL_TOP_K", "15"))
+RAG_RETRIEVAL_TOP_K = int(os.getenv("RAG_RETRIEVAL_TOP_K", "50"))
 RAG_RERANK_TOP_K = int(os.getenv("RAG_RERANK_TOP_K", "12"))
 
 # ============================================================================

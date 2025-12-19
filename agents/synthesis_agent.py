@@ -65,7 +65,7 @@ CITATION_QA_TEMPLATE = (
     "   - **Definitions:** Define ONLY non-standard acronyms on first use.\n\n"
     "4. **PROTOCOL FOR INSUFFICIENT DATA:**\n"
     "   - If the provided chunks do not contain the answer, do not hallucinate.\n"
-    "   - Output exactly: **Verdict: Insufficient Evidence.** followed by a brief explanation.\n\n"
+    "   - Output exactly: **Verdict: Insufficient Evidence.** followed by a brief explanation of what is missing.\n\n"
     "5. **CITATION RULES (STRICT):**\n"
     "   - **Valid Source Range:** You have access to Sources 1 through {max_id}. **ANY CITATION > {max_id} IS A HALLUCINATION.**\n"
     "   - **Atomic Citations:** Every specific claim must be cited immediately [N].\n"

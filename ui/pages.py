@@ -77,7 +77,7 @@ def init_ui(fastapi_app):
                         "text-green-500 shrink-0 text-xl md:text-2xl"
                     )
                     ui.label(
-                        "2. Filter: We rank results by semantic relevance, credibility and citation impact."
+                        "2. Filter: We rank results by semantic relevance, credibility, citation impact, and recency."
                     ).classes("text-sm md:text-base break-words flex-1")
 
                 # Step 3: Highlight "Full Text" & "Inline Citations" (Your key V3 features)
@@ -86,7 +86,7 @@ def init_ui(fastapi_app):
                         "text-purple-500 shrink-0 text-xl md:text-2xl"
                     )
                     ui.label(
-                        "3. Synthesize: AI analyzes the full PDF text and writes a summary with inline citations."
+                        "3. AI reads the full PDFs, identifies specific relevant passages, and generates an answer with precise inline citations."
                     ).classes("text-sm md:text-base break-words flex-1")
 
         # =====================================================================

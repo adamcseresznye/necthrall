@@ -1,7 +1,7 @@
 """Legal policies text for Necthrall UI."""
 
 PRIVACY_POLICY = """
-**Last Updated:** December 7, 2025
+**Last Updated:** December 12, 2025
 
 **1. Introduction**
 Necthrall ("we," "us," or "our") operates the Necthrall application (the "Service"). This page informs you of our policies regarding the collection, use, and disclosure of personal data when you use our Service and the choices you have associated with that data.
@@ -37,8 +37,8 @@ The Service utilizes the following third-party API providers:
       * [Privacy Policy](https://alleninstitute.org/privacy-policy/)
   * **Cerebras (Cerebras Systems, Inc.):** For large language model inference.
       * [Cerebras Privacy Policy](https://www.cerebras.ai/policies)
-  * **Groq (Groq, Inc.):** For large language model inference.
-      * [Groq Privacy Policy](https://wow.groq.com/privacy-policy/)
+  * **Mistral (Mistral AI):** For large language model inference.
+      * [Mistral Privacy Policy](https://legal.mistral.ai/terms/privacy-policy)
 
 **5. Data Security**
 The security of your data is important to us, but remember that no method of transmission over the Internet, or method of electronic storage is 100% secure. While we strive to use commercially acceptable means to protect your Personal Data, including HTTPS/TLS encryption for all data in transit, we cannot guarantee its absolute security.
@@ -59,11 +59,11 @@ If you have any questions about this Privacy Policy, please contact us:
 """
 
 TERMS_OF_SERVICE = """
-**Last Updated:** December 4, 2025
+**Last Updated:** December 12, 2025
 
 1. **Acceptance of Terms** By accessing or using the Necthrall application ("Service"), you agree to be bound by these Terms of Service ("Terms"). If you disagree with any part of the terms, you may not access the Service.
 
-2. **Description of Service** Necthrall is an AI-powered scientific research assistant designed to retrieve, synthesize, and summarize academic literature. The Service is hosted on Hugging Face Spaces and relies on third-party APIs (including Semantic Scholar, Cerebras, and Groq) to function. We reserve the right to modify, suspend, or discontinue the Service at any time without notice.
+2. **Description of Service** Necthrall is an AI-powered scientific research assistant designed to retrieve, synthesize, and summarize academic literature. The Service is hosted on Hugging Face Spaces and relies on third-party APIs (including Semantic Scholar, Cerebras, and Mistral) to function. We reserve the right to modify, suspend, or discontinue the Service at any time without notice.
 
 3. **Critical AI Disclaimer (Must Read)** 3.1. Research Purpose Only: The Service is an experimental tool intended solely for academic and informational purposes. It is not a substitute for professional medical, legal, financial, or engineering advice. 3.2. Risk of Error ("Hallucinations"): You acknowledge that Large Language Models (LLMs) can generate incorrect, misleading, or fabricated information ("hallucinations"). While Necthrall attempts to ground answers in retrieved citations, we cannot guarantee accuracy. 3.3. Verification Required: You agree to independently verify all claims, data, and citations provided by the Service against the original source documents linked in the results. Do not rely on this tool for critical decision-making.
 4. **User Conduct & Prohibited Uses** You agree not to use the Service:
