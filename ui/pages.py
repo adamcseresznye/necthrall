@@ -178,7 +178,9 @@ def init_ui(fastapi_app):
             try:
                 # Call the query service with progress callback
                 result = await fastapi_app.state.query_service.process_query(
-                    query_text, progress_callback=advance_progress
+                    query_text,
+                    deep_mode=deep_mode_switch.value,
+                    progress_callback=advance_progress,
                 )
 
                 # Check if client is still connected before updating UI
@@ -353,6 +355,18 @@ def init_ui(fastapi_app):
 
                     # Bind Enter key
                     search_input.on("keydown.enter", handle_search)
+
+                # Deep Search Switch (Moved below for mobile responsiveness)
+                with ui.row().classes("w-full max-w-2xl justify-end px-2 -mt-1 mb-1"):
+                    deep_mode_switch = (
+                        ui.switch("Deep Search", value=True)
+                        .props("dense color=primary")
+                        .classes("text-slate-500 text-xs md:text-sm")
+                    )
+                    with deep_mode_switch:
+                        ui.tooltip(
+                            "Enable for deep analysis of full PDFs. Disable for faster search using abstracts only."
+                        )
 
                 # 2. Example Queries Row (Centered Below)
                 example_queries_row = ui.row().classes(

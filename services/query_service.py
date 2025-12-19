@@ -23,8 +23,10 @@ import time
 from typing import Dict, List, Any, Optional, TYPE_CHECKING, Callable
 from dataclasses import dataclass, field
 from loguru import logger
+from llama_index.core.schema import TextNode
+import numpy as np
 
-
+from utils.embedding_utils import batched_embed
 from services.discovery_service import DiscoveryService
 from services.ingestion_service import IngestionService
 from services.rag_service import RAGService
@@ -97,7 +99,10 @@ class QueryService:
         self.rag_service = RAGService(embedding_model=embedding_model)
 
     async def process_query(
-        self, query: str, progress_callback: Optional[Callable] = None
+        self,
+        query: str,
+        deep_mode: bool = True,
+        progress_callback: Optional[Callable] = None,
     ) -> PipelineResult:
         """Process a user query through the complete pipeline.
 
@@ -108,6 +113,7 @@ class QueryService:
 
         Args:
             query: The user query string
+            deep_mode: Whether to perform deep PDF analysis (True) or fast abstract search (False)
             progress_callback: Optional async callback to report progress
 
         Returns:
@@ -168,16 +174,53 @@ class QueryService:
             # Phase 2: Ingestion (Stages 5-6)
             # =====================================================================
             await report_progress()
-            ingestion_result = await self.ingestion_service.ingest(
-                discovery_result.finalists, query
-            )
 
-            # Update timing
-            timing_breakdown.update(ingestion_result.timing_breakdown)
+            chunks = []
+
+            if deep_mode:
+                ingestion_result = await self.ingestion_service.ingest(
+                    discovery_result.finalists, query
+                )
+
+                # Update timing
+                timing_breakdown.update(ingestion_result.timing_breakdown)
+                chunks = ingestion_result.chunks
+            else:
+                logger.info(
+                    "🚀 Fast Mode active: Skipping PDF download, using abstracts."
+                )
+
+                # Create nodes from abstracts
+                for paper in discovery_result.finalists:
+                    abstract = paper.get("abstract")
+                    if not abstract:
+                        continue
+
+                    node = TextNode(text=abstract)
+                    node.metadata = {
+                        "paper_id": paper.get("paperId"),
+                        "paper_title": paper.get("title"),
+                        "url": paper.get("url")
+                        or paper.get("openAccessPdf", {}).get("url"),
+                        "year": paper.get("year"),
+                        "section": "Abstract",
+                    }
+                    chunks.append(node)
+
+                # Generate embeddings
+                if chunks:
+                    texts = [node.get_content() for node in chunks]
+                    embeddings = batched_embed(texts, self.embedding_model)
+                    for node, embedding in zip(chunks, embeddings):
+                        node.embedding = (
+                            embedding.tolist()
+                            if isinstance(embedding, np.ndarray)
+                            else embedding
+                        )
 
             # Check if we have chunks to process
-            if not ingestion_result.chunks:
-                logger.warning("⚠️ No chunks generated from ingestion")
+            if not chunks:
+                logger.warning("⚠️ No chunks generated from ingestion (or fast mode)")
                 result.execution_time = time.perf_counter() - start_time
                 result.timing_breakdown = timing_breakdown
                 result.success = True
@@ -191,9 +234,7 @@ class QueryService:
             # Use final_rephrase for RAG if available, else original query
             rag_query = discovery_result.optimized_queries.get("final_rephrase", query)
 
-            rag_result = await self.rag_service.answer(
-                rag_query, ingestion_result.chunks
-            )
+            rag_result = await self.rag_service.answer(rag_query, chunks)
 
             # Update result and timing
             result.passages = rag_result.passages
