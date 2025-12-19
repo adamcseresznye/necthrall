@@ -2,6 +2,7 @@
 
 from nicegui import ui
 from loguru import logger
+import json
 
 
 def render_loading():
@@ -21,10 +22,28 @@ def render_answer(result):
     Args:
         result: PipelineResult object with answer, execution_time, finalists, passages
     """
+
+    def copy_content():
+        """Construct and copy content to clipboard."""
+        content = result.answer + "\n\n### Sources Cited\n"
+        for idx, passage in enumerate(result.passages):
+            metadata = (
+                passage.node.metadata if hasattr(passage.node, "metadata") else {}
+            )
+            title = metadata.get("paper_title", "Unknown Source")
+            url = metadata.get("pdf_url", "") or metadata.get("url", "")
+            content += f"{idx + 1}. {title} - {url}\n"
+
+        # Serialize to JSON to handle quotes/newlines safely
+        safe_content = json.dumps(content)
+        ui.run_javascript(f"navigator.clipboard.writeText({safe_content})")
+        ui.notify("Copied to clipboard", type="positive")
+
     with ui.column().classes("answer-section w-full"):
-        # Stats row
-        with ui.row().classes("items-center gap-3 mb-4"):
-            with ui.row().classes("gap-2"):
+        # Stats row - responsive layout
+        with ui.row().classes("w-full justify-between items-start mb-4 no-wrap"):
+            # Stats badges container - allows wrapping internally
+            with ui.row().classes("flex-wrap gap-2 items-center"):
                 ui.label(f"⏱️ {result.execution_time:.1f}s").classes("stats-badge")
                 ui.label(f"📄 {len(result.finalists)} papers analyzed").classes(
                     "stats-badge"
@@ -32,6 +51,10 @@ def render_answer(result):
                 ui.label(f"📝 {len(result.passages)} sources cited").classes(
                     "stats-badge"
                 )
+
+            ui.button(icon="content_copy", on_click=copy_content).props(
+                "flat round size=sm"
+            ).classes("text-gray-500 shrink-0").tooltip("Copy to clipboard")
 
         # Answer text - clean up markdown and display
         ui.markdown(result.answer, extras=["tables"]).classes("w-full").style(
