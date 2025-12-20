@@ -18,7 +18,7 @@ from ui.components import (
 from ui.policies import PRIVACY_POLICY, TERMS_OF_SERVICE
 from ui.constants import POSTHOG_SCRIPT, KOFI_WIDGET
 import httpx
-from config.config import FORMSPREE_URL
+from config.config import WEB3FORMS_ACCESS_KEY
 
 # Path to logo directory
 LOGO_DIR = (
@@ -139,53 +139,70 @@ def init_ui(fastapi_app):
                 c_msg = ui.textarea("Message").classes("w-full").props("outlined dense")
 
                 async def handle_contact_submit():
+                    # 1. Validate inputs (Python side)
                     if not c_name.value or not c_email.value or not c_msg.value:
                         ui.notify("Please fill out all fields", type="warning")
                         return
 
-                    # Disable button to prevent double-submit
                     submit_btn.disable()
 
                     try:
-                        # 1. Check if configured
-                        if not FORMSPREE_URL:
-                            logger.warning("FORMSPREE_URL missing. Logging to console.")
-                            logger.info(
-                                f"📩 Contact | Name: {c_name.value} | Email: {c_email.value} | Msg: {c_msg.value}"
-                            )
+                        if not WEB3FORMS_ACCESS_KEY:
+                            logger.warning("WEB3FORMS_ACCESS_KEY missing.")
                             ui.notify(
                                 "Message logged (Service not configured).", type="info"
                             )
                         else:
-                            # 2. Send to Formspree
+                            import json
+
+                            # 2. Prepare Payload
                             payload = {
-                                "email": c_email.value,  # Formspree uses this for Reply-To
+                                "access_key": WEB3FORMS_ACCESS_KEY,
                                 "name": c_name.value,
+                                "email": c_email.value,
                                 "message": c_msg.value,
+                                "subject": f"Necthrall Contact: {c_name.value}",
+                                "botcheck": False,
                             }
 
-                            async with httpx.AsyncClient() as client:
-                                response = await client.post(
-                                    FORMSPREE_URL, json=payload, timeout=10.0
+                            # 3. Construct JavaScript fetch (Client-side execution)
+                            # We use json.dumps ensures safe serialization of user input
+                            js_code = f"""
+                            const response = await fetch('https://api.web3forms.com/submit', {{
+                                method: 'POST',
+                                headers: {{
+                                    'Content-Type': 'application/json',
+                                    'Accept': 'application/json'
+                                }},
+                                body: JSON.stringify({json.dumps(payload)})
+                            }});
+                            return await response.json();
+                            """
+
+                            # 4. Run JS in the user's browser and await the result
+                            result = await ui.run_javascript(js_code, timeout=15.0)
+
+                            if result and result.get("success"):
+                                ui.notify(
+                                    result.get("message", "Message sent!"),
+                                    type="positive",
                                 )
-
-                                if response.status_code == 200:
-                                    ui.notify(
-                                        "Message sent! We'll be in touch.",
-                                        type="positive",
-                                    )
-                                else:
-                                    logger.error(f"Formspree Error: {response.text}")
-                                    raise Exception("Failed to send message")
-
-                        # 3. Cleanup
-                        contact_dialog.close()
-                        c_name.value = ""
-                        c_email.value = ""
-                        c_msg.value = ""
+                                # Clear form only on success
+                                contact_dialog.close()
+                                c_name.value = ""
+                                c_email.value = ""
+                                c_msg.value = ""
+                            else:
+                                error_msg = (
+                                    result.get("message", "Unknown error")
+                                    if result
+                                    else "No response"
+                                )
+                                logger.error(f"Web3Forms JS Error: {result}")
+                                ui.notify(f"Failed: {error_msg}", type="negative")
 
                     except Exception as e:
-                        logger.error(f"Contact form failed: {e}")
+                        logger.error(f"Contact form exception: {e}")
                         ui.notify(
                             "An error occurred. Please try again later.",
                             type="negative",

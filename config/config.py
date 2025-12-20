@@ -24,8 +24,7 @@ logger.add(lambda msg: print(msg, end=""), level=LOG_LEVEL)
 # ============================================================================
 # Contact Form Configuration (Formspree)
 # ============================================================================
-FORMSPREE_URL = os.getenv("FORMSPREE_URL")
-
+WEB3FORMS_ACCESS_KEY = os.getenv("WEB3FORMS_ACCESS_KEY")
 # ============================================================================
 # Semantic Scholar API Configuration
 # ============================================================================
@@ -99,12 +98,10 @@ def validate_config() -> None:
             "help": "Get free key at https://console.groq.com/keys",
         },
     }
-    if FORMSPREE_URL:
-        logger.info("✓ Contact form configured (Formspree)")
+    if WEB3FORMS_ACCESS_KEY:
+        logger.info("✓ Contact form configured (Web3Forms)")
     else:
-        logger.warning(
-            "⚠️ Contact form URL missing. Submissions will only log to console."
-        )
+        logger.warning("⚠️ Web3Forms key missing. Submissions will log to console.")
 
     missing = []
     empty_values = []
