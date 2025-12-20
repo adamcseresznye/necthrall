@@ -17,6 +17,8 @@ from ui.components import (
 )
 from ui.policies import PRIVACY_POLICY, TERMS_OF_SERVICE
 from ui.constants import POSTHOG_SCRIPT, KOFI_WIDGET
+import httpx
+from config.config import FORMSPREE_URL
 
 # Path to logo directory
 LOGO_DIR = (
@@ -117,6 +119,85 @@ def init_ui(fastapi_app):
 
             with ui.scroll_area().classes("h-64 pr-4"):
                 ui.markdown(TERMS_OF_SERVICE).classes("text-slate-700")
+
+        # =====================================================================
+        # DIALOG: CONTACT US
+        # =====================================================================
+        with (
+            ui.dialog() as contact_dialog,
+            ui.card().classes("w-full max-w-lg q-pa-lg"),
+        ):
+            with ui.row().classes("w-full items-center justify-between mb-4"):
+                ui.label("Contact Us").classes("text-xl font-bold")
+                ui.button(icon="close", on_click=contact_dialog.close).props(
+                    "flat round dense"
+                )
+
+            with ui.column().classes("w-full gap-4"):
+                c_name = ui.input("Name").classes("w-full").props("outlined dense")
+                c_email = ui.input("Email").classes("w-full").props("outlined dense")
+                c_msg = ui.textarea("Message").classes("w-full").props("outlined dense")
+
+                async def handle_contact_submit():
+                    if not c_name.value or not c_email.value or not c_msg.value:
+                        ui.notify("Please fill out all fields", type="warning")
+                        return
+
+                    # Disable button to prevent double-submit
+                    submit_btn.disable()
+
+                    try:
+                        # 1. Check if configured
+                        if not FORMSPREE_URL:
+                            logger.warning("FORMSPREE_URL missing. Logging to console.")
+                            logger.info(
+                                f"📩 Contact | Name: {c_name.value} | Email: {c_email.value} | Msg: {c_msg.value}"
+                            )
+                            ui.notify(
+                                "Message logged (Service not configured).", type="info"
+                            )
+                        else:
+                            # 2. Send to Formspree
+                            payload = {
+                                "email": c_email.value,  # Formspree uses this for Reply-To
+                                "name": c_name.value,
+                                "message": c_msg.value,
+                            }
+
+                            async with httpx.AsyncClient() as client:
+                                response = await client.post(
+                                    FORMSPREE_URL, json=payload, timeout=10.0
+                                )
+
+                                if response.status_code == 200:
+                                    ui.notify(
+                                        "Message sent! We'll be in touch.",
+                                        type="positive",
+                                    )
+                                else:
+                                    logger.error(f"Formspree Error: {response.text}")
+                                    raise Exception("Failed to send message")
+
+                        # 3. Cleanup
+                        contact_dialog.close()
+                        c_name.value = ""
+                        c_email.value = ""
+                        c_msg.value = ""
+
+                    except Exception as e:
+                        logger.error(f"Contact form failed: {e}")
+                        ui.notify(
+                            "An error occurred. Please try again later.",
+                            type="negative",
+                        )
+                    finally:
+                        submit_btn.enable()
+
+                submit_btn = (
+                    ui.button("Send Message", on_click=handle_contact_submit)
+                    .props("unelevated color=primary")
+                    .classes("w-full font-bold")
+                )
 
         # State containers
         results_container = None
@@ -522,6 +603,12 @@ def init_ui(fastapi_app):
                     ui.label("Terms of Service").classes(
                         "cursor-pointer hover:text-slate-800 text-sm"
                     ).on("click", terms_dialog.open)
+
+                    ui.label("|").classes("text-slate-300")
+
+                    ui.label("Contact").classes(
+                        "cursor-pointer hover:text-slate-800 text-sm"
+                    ).on("click", contact_dialog.open)
 
                     ui.label("|").classes("text-slate-300")
 

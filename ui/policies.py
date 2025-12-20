@@ -1,7 +1,7 @@
 """Legal policies text for Necthrall UI."""
 
 PRIVACY_POLICY = """
-**Last Updated:** December 12, 2025
+**Last Updated:** December 19, 2025
 
 **1. Introduction**
 Necthrall ("we," "us," or "our") operates the Necthrall application (the "Service"). This page informs you of our policies regarding the collection, use, and disclosure of personal data when you use our Service and the choices you have associated with that data.
@@ -53,13 +53,11 @@ Our Service does not address anyone under the age of 18 ("Children"). We do not 
 We may update our Privacy Policy from time to time. We will notify you of any changes by posting the new Privacy Policy on this page and updating the "Last Updated" date at the top of this policy. You are advised to review this Privacy Policy periodically for any changes.
 
 **9. Contact Us**
-If you have any questions about this Privacy Policy, please contact us:
-
-  * By visiting our page on [GitHub](https://github.com/adamcseresznye/necthrall)
+If you have any questions about this Privacy Policy, please contact us at [necthrall@gmail.com](mailto:necthrall@gmail.com).
 """
 
 TERMS_OF_SERVICE = """
-**Last Updated:** December 12, 2025
+**Last Updated:** December 19, 2025
 
 1. **Acceptance of Terms** By accessing or using the Necthrall application ("Service"), you agree to be bound by these Terms of Service ("Terms"). If you disagree with any part of the terms, you may not access the Service.
 
@@ -85,5 +83,5 @@ TERMS_OF_SERVICE = """
 
 9. **Changes to Terms** We reserve the right to modify these Terms at any time. We will provide notice of significant changes by updating the "Last Updated" date at the top of this page. Your continued use of the Service after any such change constitutes your acceptance of the new Terms.
 
-10. **Contact Us** If you have any questions about these Terms, please contact us on [GitHub](https://github.com/adamcseresznye/necthrall).
+10. **Contact Us** If you have any questions about these Terms, please contact us at [necthrall@gmail.com](mailto:necthrall@gmail.com).
 """
