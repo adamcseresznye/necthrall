@@ -3,6 +3,7 @@
 FastAPI + NiceGUI integrated application for research paper analysis.
 """
 
+from config import _threading
 import os
 import sys
 
