@@ -274,12 +274,31 @@ def init_ui(fastapi_app):
                 await asyncio.sleep(0)
 
             try:
-                # Call the query service with progress callback
-                result = await fastapi_app.state.query_service.process_query(
-                    query_text,
-                    deep_mode=deep_mode_switch.value,
-                    progress_callback=advance_progress,
+                # Create a future to receive the result
+                loop = asyncio.get_running_loop()
+                future = loop.create_future()
+
+                # Add to queue
+                queue = fastapi_app.state.search_queue
+                position = queue.qsize() + 1
+                ui.notify(
+                    f"You are number {position} in the queue. We'll start your search shortly!",
+                    type="info",
+                    position="top",
+                    close_button="Got it",
                 )
+
+                await queue.put(
+                    (
+                        query_text,
+                        deep_mode_switch.value,
+                        advance_progress,
+                        future,
+                    )
+                )
+
+                # Wait for result
+                result = await future
 
                 # Check if client is still connected before updating UI
                 if not is_connected():

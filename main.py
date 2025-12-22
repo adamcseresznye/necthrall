@@ -6,6 +6,7 @@ FastAPI + NiceGUI integrated application for research paper analysis.
 from config import _threading
 import os
 import sys
+import asyncio
 
 # Disable tokenizers parallelism to avoid warnings
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -60,6 +61,45 @@ app.add_middleware(
 )
 
 
+async def search_worker():
+    """Background worker to process search queries sequentially."""
+    logger.info("Search worker started")
+    while True:
+        try:
+            # Get a "work item" out of the queue.
+            query, deep_mode, progress_callback, future = (
+                await app.state.search_queue.get()
+            )
+
+            try:
+                # Process the query
+                result = await app.state.query_service.process_query(
+                    query,
+                    deep_mode=deep_mode,
+                    progress_callback=progress_callback,
+                )
+                # Set the result
+                if not future.done():
+                    future.set_result(result)
+            except Exception as e:
+                logger.exception("Error in search worker")
+                if not future.done():
+                    future.set_exception(e)
+            finally:
+                # Notify the queue that the "work item" has been processed.
+                app.state.search_queue.task_done()
+
+                # Rate limiting: sleep for 1 second
+                await asyncio.sleep(1.0)
+
+        except asyncio.CancelledError:
+            logger.info("Search worker cancelled")
+            break
+        except Exception as e:
+            logger.error(f"Unexpected error in search worker loop: {e}")
+            await asyncio.sleep(1.0)
+
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize query service at startup."""
@@ -89,6 +129,14 @@ async def startup_event():
         # Initialize QueryService with embedding model
         app.state.query_service = QueryService(embedding_model=embedding_model)
         logger.info("🚀 Query service initialized")
+
+        # Initialize search queue and worker
+        app.state.search_queue = asyncio.Queue()
+        # --- START 3 WORKERS (3 Lanes) ---
+        for i in range(1):
+            asyncio.create_task(search_worker())
+
+        logger.info("🚀 1 Search workers initialized (Parallel Lanes)")
 
         if embedding_loaded:
             logger.info("✅ Embedding model injected into QueryService")
