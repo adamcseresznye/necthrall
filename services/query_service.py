@@ -27,6 +27,7 @@ from llama_index.core.schema import TextNode
 import numpy as np
 
 from utils.embedding_utils import batched_embed
+from agents.query_optimization_agent import QueryOptimizationAgent
 from services.discovery_service import DiscoveryService
 from services.ingestion_service import IngestionService
 from services.rag_service import RAGService
@@ -66,7 +67,7 @@ class PipelineResult:
     """
 
     query: str
-    optimized_queries: Dict[str, str]
+    optimized_queries: Dict[str, Any]
     quality_gate: Dict[str, Any]
     finalists: List[Dict[str, Any]]
     execution_time: float
@@ -94,6 +95,7 @@ class QueryService:
         self.embedding_model = embedding_model
 
         # Initialize domain services
+        self.optimization_agent = QueryOptimizationAgent()
         self.discovery_service = DiscoveryService()
         self.ingestion_service = IngestionService(embedding_model=embedding_model)
         self.rag_service = RAGService(embedding_model=embedding_model)
@@ -150,10 +152,28 @@ class QueryService:
             logger.info("Starting query pipeline for: {}", query[:100])
             await report_progress()
 
+            # ======0: Planning (Optimization)
+            # =====================================================================
+            opt_start = time.perf_counter()
+            optimization_result = None
+            try:
+                optimization_result = (
+                    await self.optimization_agent.generate_dual_queries(query)
+                )
+            except Exception as e:
+                logger.error(
+                    "Optimization failed in QueryService, proceeding with fallback: {}",
+                    e,
+                )
+
+            opt_time = time.perf_counter() - opt_start
+
             # =====================================================================
             # Phase 1: Discovery (Stages 1-4)
             # =====================================================================
-            discovery_result = await self.discovery_service.discover(query)
+            discovery_result = await self.discovery_service.discover(
+                query, optimized_data=optimization_result
+            )
 
             # Update result and timing
             result.optimized_queries = discovery_result.optimized_queries
@@ -161,6 +181,10 @@ class QueryService:
             result.finalists = discovery_result.finalists
             result.refinement_count = discovery_result.refinement_count
             timing_breakdown.update(discovery_result.timing_breakdown)
+
+            # Ensure our optimization time is preserved if we ran it
+            if optimization_result:
+                timing_breakdown["query_optimization"] = opt_time
 
             # Check if we have finalists to process
             if not discovery_result.finalists:

@@ -7,7 +7,7 @@ for passage-level semantic retrieval, and three Semantic Scholar search variants
 
 import json
 import ast
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 from loguru import logger
 
 from utils.llm_router import LLMRouter
@@ -28,7 +28,7 @@ class QueryOptimizationAgent:
     def __init__(self) -> None:
         self.router = LLMRouter()
 
-    async def generate_dual_queries(self, query: str) -> Dict[str, str]:
+    async def generate_dual_queries(self, query: str) -> Dict[str, Any]:
         """Generate dual optimized query outputs using LLM.
 
         Args:
@@ -58,13 +58,22 @@ class QueryOptimizationAgent:
             logger.warning("LLM response missing required fields, using fallback")
             return self._fallback(query)
 
-        logger.info(
-            "Query optimization successful: final_rephrase='{}', primary='{}', broad='{}', alternative='{}'",
-            parsed["final_rephrase"],
-            parsed["primary"],
-            parsed["broad"],
-            parsed["alternative"],
-        )
+        # Log based on strategy
+        strategy = parsed.get("strategy", "expansion")
+        if strategy == "decomposition":
+            logger.info(
+                "Query optimization (Decomposition): final_rephrase='{}', sub_queries={}",
+                parsed["final_rephrase"],
+                parsed["sub_queries"],
+            )
+        else:
+            logger.info(
+                "Query optimization (Expansion): final_rephrase='{}', primary='{}', broad='{}', alternative='{}'",
+                parsed["final_rephrase"],
+                parsed["primary"],
+                parsed["broad"],
+                parsed["alternative"],
+            )
         return parsed
 
     async def _call_llm(self, prompt: str) -> Optional[str]:
@@ -133,64 +142,75 @@ class QueryOptimizationAgent:
         """Build the LLM prompt for query optimization."""
         return f"""You are a query optimization expert for scientific research using Semantic Scholar API.
 
-        Your task: Extract the core research question from the user's input and generate four optimized variants.
+        Your task: Analyze the user's query and choose the best strategy: 'expansion' or 'decomposition'.
 
         User input: "{query}"
 
-        **Step 1: Extract Core Question**
-        Identify the central research question. Ignore narrative details.
+        **Strategy A: Expansion (Default)**
+        Use this for single-topic or straightforward queries.
+        Generate three keyword-based variants for Semantic Scholar and one natural language rephrase.
 
-        **Step 2: Generate Four Query Variants**
-        Create four distinct search queries. 
-        CRITICAL: Semantic Scholar is a strict keyword search engine. 
-        - DO NOT use boolean operators (AND, OR, +, -). 
-        - DO NOT use full sentences for the 'primary', 'broad', or 'alternative' queries.
-        - KEEP QUERIES SHORT (3-6 keywords max). Long queries return 0 results.
-
-        1. **final_rephrase**: Refined natural language query for semantic retrieval (Vector Search)
-        - Format: A clear, grammatically correct full sentence.
-        - Example: "What are the molecular mechanisms linking intermittent fasting to cardiovascular risk?"
-
-        2. **primary**: Precise keyword query
-        - Format: 3-6 specific keywords.
-        - Purpose: High precision matches.
-        - Example: "intermittent fasting cardiovascular risk"
-
-        3. **broad**: Expanded query
-        - Format: 3-5 broad keywords or synonyms.
-        - Purpose: High recall / category search.
-        - Example: "time restricted eating metabolic health"
-
-        4. **alternative**: Critical/Comparative query
-        - Format: 3-6 keywords focusing on limitations or debates.
-        - Purpose: Finding conflicting evidence or specific metrics.
-        - Example: "fasting caloric restriction comparison safety"
-
-        **IMPORTANT FORMATTING RULES:**
-        - Return ONLY valid JSON.
-        - Use DOUBLE QUOTES for all keys and string values.
-        - No markdown.
-
+        Output Format (JSON):
         {{
-        "final_rephrase": "...",
-        "primary": "...",
-        "broad": "...",
-        "alternative": "..."
-        }}"""
+            "strategy": "expansion",
+            "final_rephrase": "Clear natural language question for semantic search",
+            "primary": "3-6 specific keywords",
+            "broad": "3-5 broad keywords or synonyms",
+            "alternative": "3-6 keywords focusing on limitations or debates"
+        }}
+
+        **Strategy B: Decomposition**
+        Use this for complex, multi-part, or comparative queries that require breaking down.
+        Generate a list of sub-queries to be executed independently.
+
+        Output Format (JSON):
+        {{
+            "strategy": "decomposition",
+            "final_rephrase": "The overarching question in clear natural language",
+            "sub_queries": [
+                "First sub-question keywords",
+                "Second sub-question keywords",
+                "..."
+            ]
+        }}
+
+        **CRITICAL RULES:**
+        - 'final_rephrase' is MANDATORY for BOTH strategies.
+        - For 'primary', 'broad', 'alternative', and 'sub_queries': DO NOT use boolean operators (AND, OR). Keep them short (3-6 keywords).
+        - Return ONLY valid JSON.
+        """
 
     def _validate_response(self, response: Dict) -> bool:
-        """Validate that the LLM response contains all required fields."""
-        required_keys = {"final_rephrase", "primary", "broad", "alternative"}
-        return (
-            isinstance(response, dict)
-            and all(key in response for key in required_keys)
-            and all(isinstance(response[key], str) for key in required_keys)
-        )
+        """Validate that the LLM response contains all required fields based on strategy."""
+        if not isinstance(response, dict):
+            return False
 
-    def _fallback(self, query: str) -> Dict[str, str]:
+        strategy = response.get("strategy", "expansion")
+
+        # Common mandatory field
+        if "final_rephrase" not in response or not isinstance(
+            response["final_rephrase"], str
+        ):
+            return False
+
+        if strategy == "decomposition":
+            return (
+                "sub_queries" in response
+                and isinstance(response["sub_queries"], list)
+                and all(isinstance(q, str) for q in response["sub_queries"])
+            )
+        else:
+            # Expansion strategy (default)
+            required_keys = {"primary", "broad", "alternative"}
+            return all(key in response for key in required_keys) and all(
+                isinstance(response[key], str) for key in required_keys
+            )
+
+    def _fallback(self, query: str) -> Dict[str, Any]:
         """Return fallback response using original query for all fields."""
         logger.debug("Using fallback response for query: {}", query)
         return {
+            "strategy": "expansion",
             "final_rephrase": query,
             "primary": query,
             "broad": query,

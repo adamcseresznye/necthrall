@@ -11,6 +11,7 @@ import asyncio
 import time
 from typing import Dict, List, Any, Optional, TYPE_CHECKING
 from dataclasses import dataclass, field
+from collections import defaultdict
 from loguru import logger
 
 from services.exceptions import (
@@ -98,6 +99,59 @@ class RAGService:
             self._verifier = CitationVerifier()
         return self._verifier
 
+    def _select_diverse_top_k(
+        self, passages: List[Any], k: int, max_per_paper: int = 3
+    ) -> List[Any]:
+        """Select top k passages with diversity constraint (Grouped Top-K).
+
+        Args:
+            passages: List of passages sorted by score (descending).
+            k: Target number of passages to return.
+            max_per_paper: Maximum number of passages allowed from a single paper.
+
+        Returns:
+            List of selected passages.
+        """
+        if not passages:
+            return []
+
+        selected_passages = []
+        paper_counts = defaultdict(int)
+        skipped_passages = []
+
+        # First pass: Select satisfying the max_per_paper constraint
+        for passage in passages:
+            if len(selected_passages) >= k:
+                break
+
+            # Extract paper_id safely
+            paper_id = "unknown"
+            # Handle NodeWithScore object from llama_index
+            if hasattr(passage, "node") and hasattr(passage.node, "metadata"):
+                paper_id = passage.node.metadata.get("paper_id", "unknown")
+            # Handle dict or other objects
+            elif hasattr(passage, "metadata"):
+                paper_id = passage.metadata.get("paper_id", "unknown")
+            elif isinstance(passage, dict):
+                paper_id = passage.get("metadata", {}).get("paper_id", "unknown")
+
+            if paper_counts[paper_id] < max_per_paper:
+                selected_passages.append(passage)
+                paper_counts[paper_id] += 1
+            else:
+                skipped_passages.append(passage)
+
+        # Fallback: If we don't have enough passages, fill with skipped ones
+        if len(selected_passages) < k and skipped_passages:
+            needed = k - len(selected_passages)
+            logger.info(
+                "Diversity filter too aggressive, filling {} spots with skipped passages",
+                needed,
+            )
+            selected_passages.extend(skipped_passages[:needed])
+
+        return selected_passages
+
     async def answer(self, query: str, chunks: List[Any]) -> RAGResult:
         """Execute the RAG phase (Stages 7-10).
 
@@ -180,9 +234,20 @@ class RAGService:
         try:
             reranker = self._get_reranker()
             if reranker:
-                passages = await asyncio.to_thread(
-                    reranker.rerank, query, passages, top_k=RAG_RERANK_TOP_K
+                # Rerank a larger pool (all retrieved) to allow for diversity filtering
+                reranked_passages = await asyncio.to_thread(
+                    reranker.rerank, query, passages, top_k=len(passages)
                 )
+
+                # Apply diversity filter
+                logger.info(
+                    "Applying diversity filter: selecting top {} with max 3 per paper",
+                    RAG_RERANK_TOP_K,
+                )
+                passages = self._select_diverse_top_k(
+                    reranked_passages, k=RAG_RERANK_TOP_K
+                )
+
                 timing_breakdown["reranking"] = time.perf_counter() - stage_start
                 logger.info(
                     "✅ Reranking completed in {:.3f}s - selected top {} passages",

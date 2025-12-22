@@ -149,21 +149,45 @@ class SemanticScholarClient:
                 # Unexpected return but try to continue
                 logger.warning("Unexpected result type from query: %s", type(r))
 
-        # Deduplicate by paperId
-        seen: Dict[str, Dict[str, Any]] = {}
+        # Deduplicate by paperId AND Normalized Title
+        seen_ids = set()
+        seen_titles = set()
+        papers = []
+
         for p in hits:
             pid = p.get("paperId")
+
+            # 1. Skip invalid IDs
             if not pid:
                 continue
-            if pid in seen:
+
+            # 2. Skip if we've seen this ID
+            if pid in seen_ids:
                 continue
-            # Filter: require openAccessPdf.url
+
+            # 3. Skip if we've seen this TITLE (Normalization: lowercase, first 50 chars)
+            # This catches "The Study of X" vs "The study of x" vs "The Study of X (Draft)"
+            raw_title = p.get("title", "")
+            if not raw_title:
+                continue
+
+            norm_title = raw_title.lower().strip()[:50]
+            if norm_title in seen_titles:
+                continue
+
+            # 4. Filter: require openAccessPdf.url
             oa = p.get("openAccessPdf")
             if not oa or not oa.get("url"):
                 continue
-            seen[pid] = self.normalize_paper(p)
 
-        papers = list(seen.values())
+            # Mark as seen and add to results
+            seen_ids.add(pid)
+            seen_titles.add(norm_title)
+
+            # Normalize and append
+            papers.append(self.normalize_paper(p))
+
+        # papers = list(seen.values())
 
         # count how many papers actually have a non-empty embedding vector
         embedded = 0

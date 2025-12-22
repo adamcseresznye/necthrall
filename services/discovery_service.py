@@ -30,7 +30,7 @@ from services.exceptions import (
 class DiscoveryResult:
     """Result of the discovery phase."""
 
-    optimized_queries: Dict[str, str]
+    optimized_queries: Dict[str, Any]
     quality_gate: Dict[str, Any]
     finalists: List[Dict[str, Any]]
     timing_breakdown: Dict[str, float]
@@ -144,11 +144,14 @@ class DiscoveryService:
 
         return papers, quality_result
 
-    async def discover(self, query: str) -> DiscoveryResult:
+    async def discover(
+        self, query: str, optimized_data: Optional[Dict[str, Any]] = None
+    ) -> DiscoveryResult:
         """Execute the discovery phase (Stages 1-4).
 
         Args:
             query: The user query string.
+            optimized_data: Optional pre-computed optimization result.
 
         Returns:
             DiscoveryResult containing optimized queries, quality results, and finalists.
@@ -156,29 +159,49 @@ class DiscoveryService:
         timing_breakdown = {}
         refinement_count = 0
 
-        # Stage 1: Query Optimization
+        # Stage 1: Query Optimization (or use provided data)
         logger.info("Stage 1: Query optimization - input query: {}", query[:100])
         stage_start = time.perf_counter()
-        try:
-            optimized_queries = await self._get_optimizer().generate_dual_queries(query)
-            logger.info(
-                "Optimized queries returned by optimizer: {}", optimized_queries
-            )
-            timing_breakdown["query_optimization"] = time.perf_counter() - stage_start
-            logger.info(
-                "Query optimization completed in {:.3f}s",
-                timing_breakdown["query_optimization"],
-            )
-        except Exception as e:
-            logger.exception("Query optimization failed for query: {}", query[:100])
-            raise QueryOptimizationError(f"Failed to optimize query: {str(e)}") from e
 
-        # Stage 2 & 3: Semantic Scholar Search + Quality Gate (with refinement loop)
-        queries = [
-            optimized_queries["primary"],
-            optimized_queries["broad"],
-            optimized_queries["alternative"],
-        ]
+        if optimized_data:
+            logger.info("Using pre-computed optimization data")
+            optimized_queries = optimized_data
+            timing_breakdown["query_optimization"] = 0.0
+        else:
+            try:
+                optimized_queries = await self._get_optimizer().generate_dual_queries(
+                    query
+                )
+                logger.info(
+                    "Optimized queries returned by optimizer: {}", optimized_queries
+                )
+                timing_breakdown["query_optimization"] = (
+                    time.perf_counter() - stage_start
+                )
+                logger.info(
+                    "Query optimization completed in {:.3f}s",
+                    timing_breakdown["query_optimization"],
+                )
+            except Exception as e:
+                logger.exception("Query optimization failed for query: {}", query[:100])
+                raise QueryOptimizationError(
+                    f"Failed to optimize query: {str(e)}"
+                ) from e
+
+        # Extract search queries based on strategy
+        strategy = optimized_queries.get("strategy", "expansion")
+        if strategy == "decomposition":
+            queries = optimized_queries.get("sub_queries", [])
+            # Ensure it's a flat list of strings
+            if not isinstance(queries, list):
+                queries = [str(queries)]
+        else:
+            # Expansion strategy
+            queries = [
+                optimized_queries.get("primary", query),
+                optimized_queries.get("broad", query),
+                optimized_queries.get("alternative", query),
+            ]
         papers, quality_result = await self._execute_search_and_quality_gate(
             queries, timing_breakdown, attempt_label=""
         )
