@@ -148,14 +148,19 @@ class QueryOptimizationAgent:
 
         **Strategy A: Expansion (Default)**
         Use this for single-topic or straightforward queries.
-        Generate three keyword-based variants for Semantic Scholar and one natural language rephrase.
+        
+        **INTENT ANALYSIS (Crucial):**
+        Analyze the user's intent to optimize the 'broad' field:
+        1. **Overview/Consensus needed?** (e.g., "What is...", "How does...", "Summary of...") -> Set 'broad' to keywords + "review" OR "survey" OR "state of the art".
+        2. **Latest News needed?** (e.g., "Recent...", "Newest...", "Updates on...") -> Set 'broad' to keywords + "recent" OR "advances" OR "novel".
+        3. **Specific Details?** -> Keep 'broad' as general synonyms.
 
         Output Format (JSON):
         {{
             "strategy": "expansion",
             "final_rephrase": "Clear natural language question for semantic search",
             "primary": "3-6 specific keywords",
-            "broad": "3-5 broad keywords or synonyms",
+            "broad": "3-6 keywords optimized for INTENT (e.g., include 'review' or 'recent' if applicable)",
             "alternative": "3-6 keywords focusing on limitations or debates"
         }}
 
