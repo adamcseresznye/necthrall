@@ -5,9 +5,10 @@ for passage-level semantic retrieval, and three Semantic Scholar search variants
 (primary, broad, alternative) for paper-level discovery.
 """
 
-import json
 import ast
-from typing import Dict, Optional, Any
+import json
+from typing import Any, Dict, Optional
+
 from loguru import logger
 
 from utils.llm_router import LLMRouter
@@ -50,6 +51,9 @@ class QueryOptimizationAgent:
             return self._fallback(query)
 
         parsed = self._parse_json_response(response)
+        if parsed:
+            logger.info(f"LLM Output structure: {parsed}")
+
         if parsed is None:
             logger.warning("JSON parsing failed, using fallback")
             return self._fallback(query)
@@ -88,33 +92,43 @@ class QueryOptimizationAgent:
 
     def _parse_json_response(self, response: str) -> Optional[Dict]:
         """Parse JSON response from LLM, handling both JSON and Python-dict formats."""
+        parsed = None
+
         # 1. Try strict JSON parsing first (fastest/safest)
         try:
-            return json.loads(response)
+            parsed = json.loads(response)
         except json.JSONDecodeError:
             pass
 
-        # 2. Extract the block (handles markdown fences like ```json ... ```)
-        json_block = self._extract_json_block(response)
-        if not json_block:
-            logger.error("No JSON block found in response")
-            return None
-
-        # 3. Try strict JSON parsing on the extracted block
-        try:
-            return json.loads(json_block)
-        except json.JSONDecodeError as e:
-            # 4. Fallback: Try ast.literal_eval for Python-style dicts (single quotes)
-            # This fixes "Expecting property name enclosed in double quotes"
-            try:
-                # ast.literal_eval safely evaluates a string containing a Python literal
-                return ast.literal_eval(json_block)
-            except (ValueError, SyntaxError):
-                logger.warning(
-                    "Parsing failed via both json.loads and ast.literal_eval. Error: {}",
-                    e,
-                )
+        if parsed is None:
+            # 2. Extract the block (handles markdown fences like ```json ... ```)
+            json_block = self._extract_json_block(response)
+            if json_block:
+                # 3. Try strict JSON parsing on the extracted block
+                try:
+                    parsed = json.loads(json_block)
+                except json.JSONDecodeError:
+                    # 4. Fallback: Try ast.literal_eval for Python-style dicts
+                    try:
+                        parsed = ast.literal_eval(json_block)
+                    except (ValueError, SyntaxError) as e:
+                        logger.warning(
+                            "Parsing failed via both json.loads and ast.literal_eval. Error: {}",
+                            e,
+                        )
+                        return None
+            else:
+                logger.error("No JSON block found in response")
                 return None
+
+        # --- FIX: Normalize lists to strings for expansion strategy ---
+        if isinstance(parsed, dict):
+            # If LLM returns lists for these keys, join them into a single string
+            for key in ["primary", "broad", "alternative"]:
+                if key in parsed and isinstance(parsed[key], list):
+                    parsed[key] = " ".join(str(x) for x in parsed[key])
+
+        return parsed
 
     def _extract_json_block(self, text: str) -> Optional[str]:
         """Extract the first balanced JSON object from text.
@@ -223,4 +237,5 @@ class QueryOptimizationAgent:
         }
 
 
+__all__ = ["QueryOptimizationAgent"]
 __all__ = ["QueryOptimizationAgent"]

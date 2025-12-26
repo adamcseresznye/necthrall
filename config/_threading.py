@@ -1,15 +1,14 @@
-"""Threading optimization (MUST be imported first).
+"""Threading optimization.
 
-CRITICAL: This module MUST be imported before any numpy, torch, or onnxruntime
-imports occur. On Windows, these libraries lock their thread count at import time
-and cannot be changed afterwards.
+This module configures threading settings for the application.
 
 The config package now imports this at the top of __init__.py, ensuring all
 subsequent imports (dotenv, config.py, etc.) happen after threading is configured.
 """
 
-import os
 import multiprocessing
+import os
+
 from loguru import logger
 
 # Only set defaults if not already set in environment (e.g. by Docker)
@@ -27,4 +26,5 @@ if "OMP_NUM_THREADS" not in os.environ:
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
+logger.info(f"⚡ Threading Config: OMP_NUM_THREADS={os.environ.get('OMP_NUM_THREADS')}")
 logger.info(f"⚡ Threading Config: OMP_NUM_THREADS={os.environ.get('OMP_NUM_THREADS')}")

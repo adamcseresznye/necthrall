@@ -16,10 +16,6 @@ Performance:
     - Re-ranking 15 items: <600ms on CPU
     - Model: cross-encoder/ms-marco-MiniLM-L-6-v2 (lightweight, fast)
     - CPU-only: No GPU dependencies
-
-Note:
-    On Windows, torch must be imported before sentence_transformers to avoid
-    DLL initialization errors. This module handles this automatically.
 """
 
 from __future__ import annotations
@@ -27,36 +23,14 @@ from __future__ import annotations
 import os
 import sys
 import time
-from typing import List, Optional, TYPE_CHECKING
-
-from loguru import logger
-
-# WINDOWS DLL FIX: Set up torch DLL path before importing sentence_transformers
-# This prevents DLL initialization errors when onnxruntime is also used
-if os.name == "nt":
-    try:
-        torch_lib = os.path.join(sys.prefix, "Lib", "site-packages", "torch", "lib")
-        if os.path.isdir(torch_lib):
-            try:
-                os.add_dll_directory(torch_lib)
-            except Exception:
-                os.environ["PATH"] = torch_lib + os.pathsep + os.environ.get("PATH", "")
-    except Exception:
-        pass
-
-# CRITICAL: Import torch BEFORE any library that might load onnxruntime
-# (including llama_index and sentence_transformers) to avoid DLL conflicts on Windows
-try:
-    import torch  # noqa: F401
-except ImportError:
-    pass
+from typing import TYPE_CHECKING, List, Optional
 
 # Now safe to import llama_index (which may load onnxruntime)
 from llama_index.core.schema import NodeWithScore, TextNode
+from loguru import logger
 
 # Now safe to import CrossEncoder
 from sentence_transformers import CrossEncoder
-
 
 # Default model - lightweight and fast for CPU inference
 DEFAULT_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"

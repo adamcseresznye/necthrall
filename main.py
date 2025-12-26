@@ -3,41 +3,25 @@
 FastAPI + NiceGUI integrated application for research paper analysis.
 """
 
-from config import _threading
+import asyncio
 import os
 import sys
-import asyncio
+from contextlib import asynccontextmanager
+
+from config import _threading
 
 # Disable tokenizers parallelism to avoid warnings
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-# WINDOWS DLL FIX: Import torch FIRST before any ONNX-related imports
-# This prevents DLL initialization errors with c10.dll when loading CrossEncoder
-# See docs/torch_dll_fix.md for details
-if os.name == "nt":
-    try:
-        torch_lib = os.path.join(sys.prefix, "Lib", "site-packages", "torch", "lib")
-        if os.path.isdir(torch_lib):
-            try:
-                os.add_dll_directory(torch_lib)
-            except Exception:
-                os.environ["PATH"] = torch_lib + os.pathsep + os.environ.get("PATH", "")
-    except Exception:
-        pass
-
-    try:
-        import torch  # noqa: F401 - Must be imported before ONNX
-    except (ImportError, OSError):
-        pass
+from datetime import datetime
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
 from loguru import logger
-from datetime import datetime
 from nicegui import ui
+from pydantic import BaseModel, Field
 
-# Configure loguru with immediate flush for Windows compatibility
+# Configure loguru
 logger.remove()
 logger.add(
     sys.stderr,
@@ -45,35 +29,22 @@ logger.add(
     level="INFO",
 )
 
-app = FastAPI(
-    title="Necthrall API",
-    description="AI-powered scientific research assistant",
-    version="3.0.0",
-)
 
-# Configure CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-async def search_worker():
+# Move search_worker definition BEFORE app instantiation so it can be used in lifespan
+async def search_worker(app_instance: FastAPI):
     """Background worker to process search queries sequentially."""
     logger.info("Search worker started")
     while True:
         try:
             # Get a "work item" out of the queue.
+            # Using the passed instance instead of global 'app' for better safety
             query, deep_mode, progress_callback, future = (
-                await app.state.search_queue.get()
+                await app_instance.state.search_queue.get()
             )
 
             try:
                 # Process the query
-                result = await app.state.query_service.process_query(
+                result = await app_instance.state.query_service.process_query(
                     query,
                     deep_mode=deep_mode,
                     progress_callback=progress_callback,
@@ -87,7 +58,7 @@ async def search_worker():
                     future.set_exception(e)
             finally:
                 # Notify the queue that the "work item" has been processed.
-                app.state.search_queue.task_done()
+                app_instance.state.search_queue.task_done()
 
                 # Rate limiting: sleep for 1 second
                 await asyncio.sleep(1.0)
@@ -100,12 +71,15 @@ async def search_worker():
             await asyncio.sleep(1.0)
 
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize query service at startup."""
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Lifespan context manager that handles startup and shutdown logic.
+    Replaces @app.on_event("startup").
+    """
+    # --- STARTUP LOGIC ---
     try:
         import config
-
         from services.query_service import QueryService
 
         # Initialize embedding model if available
@@ -132,9 +106,14 @@ async def startup_event():
 
         # Initialize search queue and worker
         app.state.search_queue = asyncio.Queue()
+
+        # Keep track of worker tasks to cancel them on shutdown
+        worker_tasks = []
         # --- START 3 WORKERS (3 Lanes) ---
         for i in range(1):
-            asyncio.create_task(search_worker())
+            # Pass app instance to worker
+            task = asyncio.create_task(search_worker(app))
+            worker_tasks.append(task)
 
         logger.info("🚀 1 Search workers initialized (Parallel Lanes)")
 
@@ -144,9 +123,38 @@ async def startup_event():
         logger.info("✅ Application startup successful")
         logger.info(f"Query optimization model: {config.QUERY_OPTIMIZATION_MODEL}")
         logger.info(f"Synthesis model: {config.SYNTHESIS_MODEL}")
+
     except Exception as e:
         logger.exception("❌ Configuration validation failed")
         sys.exit(1)
+
+    yield  # Application runs here
+
+    # --- SHUTDOWN LOGIC ---
+    logger.info("Shutting down background workers...")
+    for task in worker_tasks:
+        task.cancel()
+
+    # Wait for workers to finish cancelling
+    await asyncio.gather(*worker_tasks, return_exceptions=True)
+    logger.info("Shutdown complete")
+
+
+app = FastAPI(
+    title="Necthrall API",
+    description="AI-powered scientific research assistant",
+    version="3.0.0",
+    lifespan=lifespan,  # Register the lifespan handler here
+)
+
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/health")
@@ -259,4 +267,4 @@ ui.run_with(
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("main:app", host="0.0.0.0", port=7860, log_level="info", reload=False)
+    uvicorn.run("main:app", host="0.0.0.0", port=7860, log_level="info", reload=True)
