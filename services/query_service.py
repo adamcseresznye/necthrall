@@ -20,30 +20,29 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Dict, List, Any, Optional, TYPE_CHECKING, Callable
 from dataclasses import dataclass, field
-from loguru import logger
-from llama_index.core.schema import TextNode
-import numpy as np
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
-from utils.embedding_utils import batched_embed
+from loguru import logger
+
 from agents.query_optimization_agent import QueryOptimizationAgent
+from config.config import Settings
 from services.discovery_service import DiscoveryService
-from services.ingestion_service import IngestionService
-from services.rag_service import RAGService
 from services.exceptions import (
-    QueryServiceError,
-    QueryOptimizationError,
-    SemanticScholarError,
-    QualityGateError,
-    RankingError,
     AcquisitionError,
     ProcessingError,
-    RetrievalError,
+    QualityGateError,
+    QueryOptimizationError,
+    QueryServiceError,
+    RankingError,
     RerankingError,
+    RetrievalError,
+    SemanticScholarError,
     SynthesisError,
     VerificationError,
 )
+from services.ingestion_service import IngestionService
+from services.rag_service import RAGService
 
 
 @dataclass
@@ -86,19 +85,24 @@ class QueryService:
     Provides comprehensive error handling and performance monitoring.
     """
 
-    def __init__(self, embedding_model: Any = None):
+    def __init__(self, settings: Settings, embedding_model: Any):
         """Initialize the query service.
 
         Args:
+            settings: Application settings.
             embedding_model: Pre-loaded embedding model for query/passage embedding.
         """
+        self.settings = settings
         self.embedding_model = embedding_model
 
-        # Initialize domain services
+        # Initialize agents/services immediately
         self.optimization_agent = QueryOptimizationAgent()
-        self.discovery_service = DiscoveryService()
-        self.ingestion_service = IngestionService(embedding_model=embedding_model)
-        self.rag_service = RAGService(embedding_model=embedding_model)
+        self.discovery_service = DiscoveryService(settings)
+        self.ingestion_service = IngestionService(embedding_model)
+        self.rag_service = RAGService(embedding_model, settings)
+
+    async def close(self):
+        await self.discovery_service.close()
 
     async def process_query(
         self,
@@ -210,37 +214,9 @@ class QueryService:
                 timing_breakdown.update(ingestion_result.timing_breakdown)
                 chunks = ingestion_result.chunks
             else:
-                logger.info(
-                    "🚀 Fast Mode active: Skipping PDF download, using abstracts."
+                chunks = await self.ingestion_service.ingest_abstracts(
+                    discovery_result.finalists
                 )
-
-                # Create nodes from abstracts
-                for paper in discovery_result.finalists:
-                    abstract = paper.get("abstract")
-                    if not abstract:
-                        continue
-
-                    node = TextNode(text=abstract)
-                    node.metadata = {
-                        "paper_id": paper.get("paperId"),
-                        "paper_title": paper.get("title"),
-                        "url": paper.get("url")
-                        or paper.get("openAccessPdf", {}).get("url"),
-                        "year": paper.get("year"),
-                        "section": "Abstract",
-                    }
-                    chunks.append(node)
-
-                # Generate embeddings
-                if chunks:
-                    texts = [node.get_content() for node in chunks]
-                    embeddings = batched_embed(texts, self.embedding_model)
-                    for node, embedding in zip(chunks, embeddings):
-                        node.embedding = (
-                            embedding.tolist()
-                            if isinstance(embedding, np.ndarray)
-                            else embedding
-                        )
 
             # Check if we have chunks to process
             if not chunks:
@@ -292,4 +268,5 @@ class QueryService:
             result.success = False
             result.error_message = f"Unexpected error: {str(e)}"
             result.error_stage = "unknown"
+            return result
             return result

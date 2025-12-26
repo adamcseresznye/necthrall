@@ -1,18 +1,21 @@
 import logging
-from typing import Optional, List
-from deepeval.models.base_model import DeepEvalBaseLLM
+from typing import List, Optional
+
 import litellm
-from config import config
+from deepeval.models.base_model import DeepEvalBaseLLM
+
+from config.config import get_settings
 
 logger = logging.getLogger(__name__)
 
 
 class LLMJudge(DeepEvalBaseLLM):
     def __init__(self):
-        self.model_name = config.SYNTHESIS_MODEL
-        self.fallback_model_name = config.SYNTHESIS_FALLBACK
-        self.primary_api_key = config.PRIMARY_LLM_API_KEY
-        self.secondary_api_key = config.SECONDARY_LLM_API_KEY
+        settings = get_settings()
+        self.model_name = settings.SYNTHESIS_MODEL
+        self.fallback_model_name = settings.SYNTHESIS_FALLBACK
+        self.primary_api_key = settings.PRIMARY_LLM_API_KEY
+        self.secondary_api_key = settings.SECONDARY_LLM_API_KEY
 
     def load_model(self):
         return self.model_name
@@ -76,6 +79,9 @@ class LLMJudge(DeepEvalBaseLLM):
                     raise fallback_e
             else:
                 raise e
+
+    def get_model_name(self):
+        return self.model_name
 
     def get_model_name(self):
         return self.model_name

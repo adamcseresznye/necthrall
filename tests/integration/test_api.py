@@ -1,6 +1,7 @@
-﻿import pytest
+﻿import os
 import time
-import os
+
+import pytest
 
 
 @pytest.fixture
@@ -53,22 +54,7 @@ def test_health_endpoint(app, set_test_env):
     data = response.json()
     assert data["status"] == "healthy"
     assert "timestamp" in data
-    assert data["version"] == "3.0.0-mvp"
-
-
-@pytest.mark.integration
-def test_root_endpoint(app, set_test_env):
-    """Test root endpoint returns 200 status with API documentation links"""
-    from fastapi.testclient import TestClient
-
-    client = TestClient(app)
-    response = client.get("/")
-
-    assert response.status_code == 200
-    data = response.json()
-    assert "message" in data
-    assert data["docs"] == "/docs"
-    assert data["health"] == "/health"
+    assert data["version"] == "3.0.0"
 
 
 @pytest.mark.integration
@@ -95,4 +81,5 @@ def test_startup_event_logs_configuration(app, set_test_env):
 
     client = TestClient(app)
     response = client.get("/health")
+    assert response.status_code == 200
     assert response.status_code == 200

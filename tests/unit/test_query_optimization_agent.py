@@ -1,6 +1,7 @@
-import pytest
-from unittest.mock import AsyncMock, patch
 import json
+from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from agents.query_optimization_agent import QueryOptimizationAgent
 
@@ -46,6 +47,7 @@ async def test_generate_dual_queries_llm_timeout_fallback():
         result = await agent.generate_dual_queries(query)
 
         expected = {
+            "strategy": "expansion",
             "final_rephrase": query,
             "primary": query,
             "broad": query,
@@ -70,6 +72,7 @@ async def test_generate_dual_queries_invalid_json_fallback():
         result = await agent.generate_dual_queries(query)
 
         expected = {
+            "strategy": "expansion",
             "final_rephrase": query,
             "primary": query,
             "broad": query,
@@ -97,4 +100,5 @@ async def test_generate_dual_queries_empty_query():
 
         expected = {"final_rephrase": "", "primary": "", "broad": "", "alternative": ""}
         assert result == expected
+        mock_generate.assert_called_once()
         mock_generate.assert_called_once()

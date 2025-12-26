@@ -1,24 +1,24 @@
 """Page definitions for the Necthrall UI."""
 
 import asyncio
-from pathlib import Path
-from nicegui import ui, context, app
-from loguru import logger
 import datetime
+from pathlib import Path
 
-from ui.styles import CUSTOM_CSS
+import httpx
+from loguru import logger
+from nicegui import app, context, ui
+
+from config.config import get_settings
 from ui.components import (
-    render_loading,
+    SearchProgress,
     render_answer,
-    render_sources,
     render_error,
     render_exception_error,
-    SearchProgress,
+    render_loading,
+    render_sources,
 )
+from ui.constants import KOFI_WIDGET, POSTHOG_SCRIPT
 from ui.policies import PRIVACY_POLICY, TERMS_OF_SERVICE
-from ui.constants import POSTHOG_SCRIPT, KOFI_WIDGET
-import httpx
-from config.config import WEB3FORMS_ACCESS_KEY
 
 # Path to logo directory
 LOGO_DIR = (
@@ -43,7 +43,7 @@ def init_ui(fastapi_app):
         ui.add_head_html(f"<script>{POSTHOG_SCRIPT}</script>")
 
         # Inject custom CSS
-        ui.add_head_html(f"<style>{CUSTOM_CSS}</style>")
+        ui.add_head_html('<link rel="stylesheet" href="/static/css/styles.css">')
 
         # Inject Ko-fi widget
         ui.add_body_html(KOFI_WIDGET)
@@ -147,17 +147,15 @@ def init_ui(fastapi_app):
                     submit_btn.disable()
 
                     try:
-                        if not WEB3FORMS_ACCESS_KEY:
+                        if not get_settings().WEB3FORMS_ACCESS_KEY:
                             logger.warning("WEB3FORMS_ACCESS_KEY missing.")
                             ui.notify(
                                 "Message logged (Service not configured).", type="info"
                             )
                         else:
-                            import json
-
                             # 2. Prepare Payload
                             payload = {
-                                "access_key": WEB3FORMS_ACCESS_KEY,
+                                "access_key": get_settings().WEB3FORMS_ACCESS_KEY,
                                 "name": c_name.value,
                                 "email": c_email.value,
                                 "message": c_msg.value,
@@ -165,8 +163,10 @@ def init_ui(fastapi_app):
                                 "botcheck": False,
                             }
 
-                            # 3. Construct JavaScript fetch (Client-side execution)
-                            # We use json.dumps ensures safe serialization of user input
+                            import json
+
+                            # 3. Submit via Client-side JS (Web3Forms Free Tier requires this)
+                            # Note: We use json.dumps to safely serialize the payload into the JS string.
                             js_code = f"""
                             const response = await fetch('https://api.web3forms.com/submit', {{
                                 method: 'POST',
@@ -179,7 +179,6 @@ def init_ui(fastapi_app):
                             return await response.json();
                             """
 
-                            # 4. Run JS in the user's browser and await the result
                             result = await ui.run_javascript(js_code, timeout=15.0)
 
                             if result and result.get("success"):
@@ -457,7 +456,7 @@ def init_ui(fastapi_app):
                         ui.input(placeholder="What would you like to research today?")
                         .classes("flex-grow min-w-0")
                         .props(
-                            "borderless dense "
+                            "borderless dense autofocus"
                             "input-style='font-size: 16px; text-overflow: ellipsis;' "
                             "input-class='placeholder-slate-400'"
                         )

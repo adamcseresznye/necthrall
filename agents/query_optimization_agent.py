@@ -7,10 +7,12 @@ for passage-level semantic retrieval, and three Semantic Scholar search variants
 
 import ast
 import json
+import re
 from typing import Any, Dict, Optional
 
 from loguru import logger
 
+from config.prompts import QUERY_OPTIMIZATION_TEMPLATE
 from utils.llm_router import LLMRouter
 
 
@@ -133,71 +135,20 @@ class QueryOptimizationAgent:
     def _extract_json_block(self, text: str) -> Optional[str]:
         """Extract the first balanced JSON object from text.
 
-        This scans for the first '{' and then finds the matching '}' by
-        tracking brace depth. Returns the substring (including braces) or
-        None when no balanced block is found.
+        Uses regex to find the first JSON object, handling potential
+        Markdown code blocks or conversational text.
         """
-        if not text or "{" not in text:
+        if not text:
             return None
 
-        start = text.find("{")
-        depth = 0
-        for i in range(start, len(text)):
-            ch = text[i]
-            if ch == "{":
-                depth += 1
-            elif ch == "}":
-                depth -= 1
-                if depth == 0:
-                    return text[start : i + 1]
+        match = re.search(r"(\{.*\})", text, re.DOTALL)
+        if match:
+            return match.group(1)
         return None
 
     def _build_prompt(self, query: str) -> str:
         """Build the LLM prompt for query optimization."""
-        return f"""You are a query optimization expert for scientific research using Semantic Scholar API.
-
-        Your task: Analyze the user's query and choose the best strategy: 'expansion' or 'decomposition'.
-
-        User input: "{query}"
-
-        **Strategy A: Expansion (Default)**
-        Use this for single-topic or straightforward queries.
-        
-        **INTENT ANALYSIS (Crucial):**
-        Analyze the user's intent to optimize the 'broad' field:
-        1. **Overview/Consensus needed?** (e.g., "What is...", "How does...", "Summary of...") -> Set 'broad' to keywords + "review" OR "survey" OR "state of the art".
-        2. **Latest News needed?** (e.g., "Recent...", "Newest...", "Updates on...") -> Set 'broad' to keywords + "recent" OR "advances" OR "novel".
-        3. **Specific Details?** -> Keep 'broad' as general synonyms.
-
-        Output Format (JSON):
-        {{
-            "strategy": "expansion",
-            "final_rephrase": "Clear natural language question for semantic search",
-            "primary": "3-6 specific keywords",
-            "broad": "3-6 keywords optimized for INTENT (e.g., include 'review' or 'recent' if applicable)",
-            "alternative": "3-6 keywords focusing on limitations or debates"
-        }}
-
-        **Strategy B: Decomposition**
-        Use this for complex, multi-part, or comparative queries that require breaking down.
-        Generate a list of sub-queries to be executed independently.
-
-        Output Format (JSON):
-        {{
-            "strategy": "decomposition",
-            "final_rephrase": "The overarching question in clear natural language",
-            "sub_queries": [
-                "First sub-question keywords",
-                "Second sub-question keywords",
-                "..."
-            ]
-        }}
-
-        **CRITICAL RULES:**
-        - 'final_rephrase' is MANDATORY for BOTH strategies.
-        - For 'primary', 'broad', 'alternative', and 'sub_queries': DO NOT use boolean operators (AND, OR). Keep them short (3-6 keywords).
-        - Return ONLY valid JSON.
-        """
+        return QUERY_OPTIMIZATION_TEMPLATE.format(query=query)
 
     def _validate_response(self, response: Dict) -> bool:
         """Validate that the LLM response contains all required fields based on strategy."""
@@ -237,5 +188,4 @@ class QueryOptimizationAgent:
         }
 
 
-__all__ = ["QueryOptimizationAgent"]
 __all__ = ["QueryOptimizationAgent"]

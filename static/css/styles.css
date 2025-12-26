@@ -1,6 +1,3 @@
-"""Custom CSS styles for the Necthrall UI."""
-
-CUSTOM_CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
 :root {
@@ -120,7 +117,8 @@ body {
 }
 
 /* Markdown styling within answer */
-.answer-text ul, .answer-text ol {
+.answer-text ul,
+.answer-text ol {
     margin: 0.5rem 0;
     padding-left: 1.5rem;
 }
@@ -325,34 +323,34 @@ a.source-link-btn:visited {
     .search-container {
         padding: 0 16px;
     }
-    
+
     .brand-title {
         font-size: 1.25rem;
     }
-    
+
     .answer-section {
         padding: 16px;
     }
-    
+
     .answer-section p,
     .answer-section li {
         word-wrap: break-word;
         overflow-wrap: break-word;
         word-break: break-word;
     }
-    
+
     .source-card {
         padding: 12px;
     }
-    
+
     .source-title {
         font-size: 0.9rem;
     }
-    
+
     .source-snippet {
         font-size: 0.8rem;
     }
-    
+
     .header-container {
         padding: 10px 16px;
     }
@@ -363,12 +361,12 @@ a.source-link-btn:visited {
         padding: 8px 12px !important;
         font-size: 0.875rem !important;
     }
-    
+
     .example-queries {
         flex-direction: column;
         align-items: stretch;
     }
-    
+
     .example-btn {
         justify-content: center;
     }
@@ -404,4 +402,3 @@ a.source-link-btn:visited {
     color: var(--primary) !important;
     background: rgba(249, 115, 22, 0.05) !important;
 }
-"""

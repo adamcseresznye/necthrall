@@ -21,68 +21,15 @@ Architecture:
     - Handles empty nodes gracefully with fallback message
 """
 
+import re
 from typing import List
-from loguru import logger
 
 from llama_index.core.schema import NodeWithScore
-from config import RAG_RERANK_TOP_K
+from loguru import logger
 
+from config.config import get_settings
+from config.prompts import CITATION_QA_TEMPLATE, FEW_SHOT_EXAMPLE
 from utils.llm_router import LLMRouter
-import re
-
-
-FEW_SHOT_EXAMPLE = """
-**Verdict: Yes, with consensus on mechanism but debate on magnitude.**
-Rapamycin consistently extends lifespan in model organisms via mTOR inhibition [1], though sexual dimorphism in mice remains a significant variable [3].
-
-### Evidence Synthesis
-The extension of lifespan by rapamycin is robust and reproducible across diverse taxa, including yeast, nematodes, and mice [1]. The primary mechanism is the inhibition of the *mammalian target of rapamycin* (mTOR) pathway, which mimics caloric restriction and enhances autophagy [4]. In murine models, treatment initiated even in late life (600 days) significantly increases survival rates [2], suggesting the intervention is effective even after aging has commenced.
-
-### Critical Nuances & Conflicts
-* **Sexual Dimorphism –** Evidence suggests a stronger effect in females than males. One major study found a 14% extension in females versus only 9% in males at the same dosage [3], potentially due to differences in hepatic drug metabolism.
-* **Dosage Toxicity –** While lifespan is extended, high doses are associated with testicular degeneration [5], indicating a narrow therapeutic window.
-"""
-
-CITATION_QA_TEMPLATE = (
-    "You are a Senior Scientific Research Fellow briefing a Principal Investigator. "
-    "Your goal is to distill a complex body of literature into a definitive, scientifically rigorous synthesis.\n"
-    "---------------------\n"
-    "### INSTRUCTIONS:\n"
-    "1. **THE BLUF (Bottom Line Up Front):**\n"
-    "   - Start immediately with a bold **Label**. Choose the best fit:\n"
-    "       * *Binary:* **Verdict: Yes / No / Mixed.**\n"
-    "       * *Definitional:* **Core Concept: [Phrase].**\n"
-    "       * *Methodological:* **Standard Protocol: [Method].**\n"
-    "       * *Open:* **Scientific Consensus: [Theme].**\n"
-    "   - Follow with a high-level thesis sentence summarizing the answer.\n\n"
-    "2. **THE EVIDENCE (Structured & Rigorous):**\n"
-    "   - **Evidence Synthesis:** Synthesize the high-authority agreement. What is the established truth? (Cite support).\n"
-    "   - **Critical Nuances:** Discuss conflicts, sexual dimorphism, in vivo vs in vitro discrepancies, or major limitations.\n\n"
-    "3. **STYLE & CONSTRAINTS:**\n"
-    "   - **Target Length:** ~250-350 words. Be dense but readable.\n"
-    "   - **Bullet Style:** Start every bullet point with a **Bold Concept Label** followed by a dash. Mandatory.\n"
-    "   - **Tone:** Professional. Use precise terminology.\n"
-    "   - **Definitions:** Define ONLY non-standard acronyms on first use.\n\n"
-    "4. **PROTOCOL FOR INSUFFICIENT DATA:**\n"
-    "   - If the provided chunks do not contain the answer, do not hallucinate.\n"
-    "   - Output exactly: **Verdict: Insufficient Evidence.** followed by a brief explanation of what is missing.\n"
-    "   - If you know of a major scientific consensus that is NOT in the sources, you may add a final section: \n"
-    "     '### Missing Context'\n"
-    "     'Major theories such as [Concept] were not found in the retrieved papers.' (DO NOT CITE THIS).\n\n"
-    "5. **CITATION RULES (STRICT):**\n"
-    "   - **Valid Source Range:** You have access to Sources 1 through {max_id}. **ANY CITATION > {max_id} IS A HALLUCINATION.**\n"
-    "   - **Atomic Citations:** Every specific claim must be cited immediately [N].\n"
-    "   - **Verification:** Do not cite a source unless the text explicitly supports the claim.\n"
-    "   - **The 'Eyes-Only' Rule:** IGNORE YOUR TRAINING DATA. Use ONLY facts present in the text chunks.\n"
-    "### REQUIRED OUTPUT FORMAT:\n"
-    "---------------------\n"
-    f"{FEW_SHOT_EXAMPLE}\n"
-    "---------------------\n\n"
-    "### CONTEXT CHUNKS (Sources 1-{max_id}):\n"
-    "{context_str}\n\n"
-    "User Query: {query_str}\n"
-    "Answer (using ONLY Sources 1-{max_id}):"
-)
 
 
 class SynthesisAgent:
@@ -99,12 +46,14 @@ class SynthesisAgent:
 
     INSUFFICIENT_CONTEXT_MESSAGE = "I cannot answer this based on the provided sources."
 
-    def __init__(self, temperature: float = 0.15) -> None:
+    def __init__(self, settings: "Settings" = None, temperature: float = 0.15) -> None:
         """Initialize the synthesis agent.
 
         Args:
+            settings: Optional settings object. If None, loads from config.
             temperature: LLM temperature for generation (0.15 = focused but not rigid).
         """
+        self.settings = settings or get_settings()
         self.router = LLMRouter()
         self.temperature = temperature
         logger.info(f"SynthesisAgent initialized with temperature={temperature}")
@@ -139,7 +88,9 @@ class SynthesisAgent:
 
         # Build the full prompt
         prompt = CITATION_QA_TEMPLATE.format(
-            context_str=context_str, query_str=query, max_id=RAG_RERANK_TOP_K
+            context_str=context_str,
+            query_str=query,
+            max_id=get_settings().RAG_RERANK_TOP_K,
         )
 
         logger.debug(

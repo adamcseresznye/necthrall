@@ -7,11 +7,15 @@ Responsibilities:
 
 import asyncio
 import time
-from typing import Dict, List, Any, Optional, TYPE_CHECKING
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
+
+import numpy as np
+from llama_index.core.schema import TextNode
 from loguru import logger
 
 from services.exceptions import AcquisitionError, ProcessingError
+from utils.embedding_utils import batched_embed
 
 if TYPE_CHECKING:
     from agents.acquisition_agent import AcquisitionAgent
@@ -110,6 +114,9 @@ class IngestionService:
                 timing_breakdown["pdf_acquisition"],
                 len(passages),
             )
+        except asyncio.CancelledError:
+            logger.info("🛑 PDF Acquisition cancelled by user")
+            raise
         except Exception as e:
             timing_breakdown["pdf_acquisition"] = time.perf_counter() - stage_start
             logger.warning(
@@ -158,3 +165,46 @@ class IngestionService:
             chunks=chunks,
             timing_breakdown=timing_breakdown,
         )
+
+    async def ingest_abstracts(self, papers: List[Dict]) -> List[TextNode]:
+        """Ingest abstracts from papers in Fast Mode.
+
+        Args:
+            papers: List of paper dictionaries.
+
+        Returns:
+            List of TextNodes with embeddings.
+        """
+        logger.info("🚀 Fast Mode active: Skipping PDF download, using abstracts.")
+        chunks = []
+
+        # Create nodes from abstracts
+        for paper in papers:
+            abstract = paper.get("abstract")
+            if not abstract:
+                continue
+
+            node = TextNode(text=abstract)
+            node.metadata = {
+                "paper_id": paper.get("paperId"),
+                "paper_title": paper.get("title"),
+                "url": paper.get("url") or paper.get("openAccessPdf", {}).get("url"),
+                "year": paper.get("year"),
+                "section": "Abstract",
+            }
+            chunks.append(node)
+
+        # Generate embeddings
+        if chunks:
+            texts = [node.get_content() for node in chunks]
+            embeddings = await asyncio.to_thread(
+                batched_embed, texts, self.embedding_model
+            )
+            for node, embedding in zip(chunks, embeddings):
+                node.embedding = (
+                    embedding.tolist()
+                    if isinstance(embedding, np.ndarray)
+                    else embedding
+                )
+
+        return chunks

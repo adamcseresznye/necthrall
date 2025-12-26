@@ -9,12 +9,13 @@ Usage example:
     content = await router.generate("Summarize this paper.", "synthesis")
 """
 
-from typing import Optional
-from loguru import logger
 import asyncio
-import litellm
+from typing import Optional
 
-import config.config as config
+import litellm
+from loguru import logger
+
+from config.config import get_settings
 
 
 class LLMRouter:
@@ -25,18 +26,19 @@ class LLMRouter:
     """
 
     def __init__(self) -> None:
+        settings = get_settings()
         # Store API keys for use in generate method
-        self._primary_api_key = config.PRIMARY_LLM_API_KEY
-        self._secondary_api_key = config.SECONDARY_LLM_API_KEY
+        self._primary_api_key = settings.PRIMARY_LLM_API_KEY
+        self._secondary_api_key = settings.SECONDARY_LLM_API_KEY
 
         # Read model names from config on instantiation. Keep values simple so
         # tests can patch the module attributes.
         self._models = {
             "optimization": (
-                config.QUERY_OPTIMIZATION_MODEL,
-                config.QUERY_OPTIMIZATION_FALLBACK,
+                settings.QUERY_OPTIMIZATION_MODEL,
+                settings.QUERY_OPTIMIZATION_FALLBACK,
             ),
-            "synthesis": (config.SYNTHESIS_MODEL, config.SYNTHESIS_FALLBACK),
+            "synthesis": (settings.SYNTHESIS_MODEL, settings.SYNTHESIS_FALLBACK),
         }
 
     async def _call_model(

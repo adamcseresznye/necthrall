@@ -18,12 +18,12 @@ State.papers expectations.
 from __future__ import annotations
 
 import asyncio
+import sys
 import time
 from typing import Any, Dict, List, Optional
 
 import aiohttp
 from loguru import logger
-import sys
 
 logger.remove()
 logger.add(sys.stderr, level="INFO")
@@ -50,6 +50,19 @@ class SemanticScholarClient:
         self._semaphore = asyncio.Semaphore(rate_limit)
         # Default per-request timeout (seconds) used for client sessions
         self._timeout_seconds = 10
+        self._session: Optional[aiohttp.ClientSession] = None
+
+    async def _get_session(self) -> aiohttp.ClientSession:
+        if self._session is None or self._session.closed:
+            # Create persistent session with connection pooling
+            connector = aiohttp.TCPConnector(limit=100, limit_per_host=25)
+            timeout = aiohttp.ClientTimeout(total=self._timeout_seconds)
+            self._session = aiohttp.ClientSession(connector=connector, timeout=timeout)
+        return self._session
+
+    async def close(self):
+        if self._session and not self._session.closed:
+            await self._session.close()
 
     async def multi_query_search(
         self,
@@ -89,21 +102,13 @@ class SemanticScholarClient:
         # Log entry with a short preview so we can diagnose slow queries
         logger.info(f"multi_query_search entry: queries= {[q[:80] for q in queries]}")
 
-        # Use a pooled connector and a client timeout for better performance
-        connector = aiohttp.TCPConnector(limit=100, limit_per_host=25)
-        timeout = aiohttp.ClientTimeout(total=self._timeout_seconds)
+        session = await self._get_session()
+        tasks = [self._run_query(session, q, limit_per_query, fields) for q in queries]
 
-        async with aiohttp.ClientSession(
-            connector=connector, timeout=timeout
-        ) as session:
-            tasks = [
-                self._run_query(session, q, limit_per_query, fields) for q in queries
-            ]
-
-            start = time.perf_counter()
-            raw_results = await asyncio.gather(*tasks, return_exceptions=True)
-            elapsed = time.perf_counter() - start
-            logger.info("multi_query_search finished in {:.3f}s", elapsed)
+        start = time.perf_counter()
+        raw_results = await asyncio.gather(*tasks, return_exceptions=True)
+        elapsed = time.perf_counter() - start
+        logger.info("multi_query_search finished in {:.3f}s", elapsed)
 
         # Log how many raw hits we received per input query (primary/broad/alternative
         # ordering is expected by the caller). This helps diagnose which variant

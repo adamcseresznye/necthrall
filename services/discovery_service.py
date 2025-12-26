@@ -9,20 +9,21 @@ Responsibilities:
 
 import asyncio
 import time
-from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
+
 from loguru import logger
 
-import config
-from agents.query_optimization_agent import QueryOptimizationAgent
-from agents.semantic_scholar_client import SemanticScholarClient
 from agents.quality_gate import validate_quality
+from agents.query_optimization_agent import QueryOptimizationAgent
 from agents.ranking_agent import RankingAgent
+from agents.semantic_scholar_client import SemanticScholarClient
+from config.config import Settings
 from services.exceptions import (
-    QueryOptimizationError,
-    SemanticScholarError,
     QualityGateError,
+    QueryOptimizationError,
     RankingError,
+    SemanticScholarError,
 )
 
 
@@ -40,30 +41,15 @@ class DiscoveryResult:
 class DiscoveryService:
     """Service for paper discovery and ranking."""
 
-    def __init__(self):
-        self._optimizer = None
-        self._client = None
-        self._ranker = None
+    def __init__(self, settings: Settings):
+        self.settings = settings
+        # Initialize components immediately
+        self.optimizer = QueryOptimizationAgent()
+        self.client = SemanticScholarClient(api_key=settings.SEMANTIC_SCHOLAR_API_KEY)
+        self.ranker = RankingAgent()
 
-    def _get_optimizer(self) -> QueryOptimizationAgent:
-        """Lazy initialization of query optimizer."""
-        if self._optimizer is None:
-            self._optimizer = QueryOptimizationAgent()
-        return self._optimizer
-
-    def _get_client(self) -> SemanticScholarClient:
-        """Lazy initialization of Semantic Scholar client."""
-        if self._client is None:
-            self._client = SemanticScholarClient(
-                api_key=config.SEMANTIC_SCHOLAR_API_KEY
-            )
-        return self._client
-
-    def _get_ranker(self) -> RankingAgent:
-        """Lazy initialization of ranking agent."""
-        if self._ranker is None:
-            self._ranker = RankingAgent()
-        return self._ranker
+    async def close(self):
+        await self.client.close()
 
     async def _execute_search_and_quality_gate(
         self,
@@ -93,9 +79,7 @@ class DiscoveryService:
         )
         stage_start = time.perf_counter()
         try:
-            papers = await self._get_client().multi_query_search(
-                queries, limit_per_query=100
-            )
+            papers = await self.client.multi_query_search(queries, limit_per_query=100)
             search_key = f"semantic_scholar_search{attempt_label}"
             timing_breakdown[search_key] = time.perf_counter() - stage_start
             logger.info(
@@ -125,7 +109,9 @@ class DiscoveryService:
         stage_start = time.perf_counter()
         try:
             query_embedding = None
-            quality_result = validate_quality(papers, query_embedding)
+            quality_result = await asyncio.to_thread(
+                validate_quality, papers, query_embedding
+            )
             gate_key = f"quality_gate{attempt_label}"
             timing_breakdown[gate_key] = time.perf_counter() - stage_start
             logger.info(
@@ -169,9 +155,7 @@ class DiscoveryService:
             timing_breakdown["query_optimization"] = 0.0
         else:
             try:
-                optimized_queries = await self._get_optimizer().generate_dual_queries(
-                    query
-                )
+                optimized_queries = await self.optimizer.generate_dual_queries(query)
                 logger.info(
                     "Optimized queries returned by optimizer: {}", optimized_queries
                 )
@@ -249,7 +233,7 @@ class DiscoveryService:
             stage_start = time.perf_counter()
             try:
                 finalists = await asyncio.to_thread(
-                    self._get_ranker().rank_papers,
+                    self.ranker.rank_papers,
                     papers,
                     optimized_queries["final_rephrase"],
                     50,  # top_k for Base+Bonus strategy

@@ -55,6 +55,10 @@ class DummyClientSession:
 
     def __init__(self, responses: Dict[str, Any]):
         self._responses = responses
+        self.closed = False
+
+    async def close(self):
+        self.closed = True
 
     async def __aenter__(self):
         return self

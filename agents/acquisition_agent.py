@@ -1,15 +1,16 @@
 ﻿from __future__ import annotations
 
 import asyncio
-import tempfile
 import os
+import tempfile
 import time
-from typing import List, Dict, Any, Optional
-from loguru import logger
+from typing import Any, Dict, List, Optional
+
 from curl_cffi.requests import AsyncSession, RequestsError
+from loguru import logger
 
 from models.state import State
-from utils.pdf_extractor import extract_text_from_pdf_file, PdfExtractionError
+from utils.pdf_extractor import PdfExtractionError, extract_text_from_pdf_file
 
 # UPDATE THIS BLOCK
 HEADERS = {
@@ -69,7 +70,7 @@ class AcquisitionAgent:
 
         TARGET_PDF_COUNT = 5
         acquired_pdfs = 0
-        final_passages = []
+        passages_map: Dict[str, Dict[str, Any]] = {}
 
         finalists = state.finalists
         logger.info(
@@ -83,6 +84,10 @@ class AcquisitionAgent:
         async with AsyncSession(impersonate="chrome110", headers=HEADERS) as session:
             # 1. First, add abstracts for ALL finalists (fast, synchronous)
             for paper in finalists:
+                paper_id = paper.get("paperId") or paper.get("id")
+                if not paper_id:
+                    continue
+
                 abstract_text = paper.get("abstract", "")
                 if abstract_text:
                     abstract_passage = dict(paper)
@@ -93,7 +98,7 @@ class AcquisitionAgent:
                             "extraction_error": None,
                         }
                     )
-                    final_passages.append(abstract_passage)
+                    passages_map[paper_id] = abstract_passage
 
             # 2. Concurrent PDF acquisition for top candidates
             # We try the top 12 candidates to get our target of 5 PDFs
@@ -135,19 +140,22 @@ class AcquisitionAgent:
                     #    break
 
                     if res and res.get("text"):
-                        final_passages.append(res)
-                        acquired_pdfs += 1
-                        paper_title = res.get("title", "Unknown")[:60]
-                        logger.info(
-                            "PDF acquired ({a}/{t}): {title}",
-                            a=acquired_pdfs,
-                            t=TARGET_PDF_COUNT,
-                            title=paper_title,
-                        )
+                        paper_id = res.get("paperId") or res.get("id")
+                        if paper_id:
+                            passages_map[paper_id] = res
+                            acquired_pdfs += 1
+                            paper_title = res.get("title", "Unknown")[:60]
+                            logger.info(
+                                "Upgrading to PDF ({a}/{t}): {title}",
+                                a=acquired_pdfs,
+                                t=TARGET_PDF_COUNT,
+                                title=paper_title,
+                            )
 
         elapsed = time.monotonic() - start_all
 
         # Update state.passages with final results
+        final_passages = list(passages_map.values())
         new_state = state.model_copy(deep=True)
         new_state.passages = final_passages
 
@@ -185,99 +193,92 @@ class AcquisitionAgent:
             return None
 
         logger.debug("Downloading PDF for {pid} from {url}", pid=paper_id, url=url)
-        t0 = time.monotonic()
-        try:
-            tmp_path = await self._download_single_pdf(paper_id, url, session)
-        except asyncio.TimeoutError:
-            logger.warning("Timeout while downloading PDF for {pid}", pid=paper_id)
-            return None
-        except RequestsError as e:
-            logger.warning(
-                "HTTP/client error for {pid}: {err}", pid=paper_id, err=str(e)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pdf_path = os.path.join(temp_dir, f"{paper_id}.pdf")
+            t0 = time.monotonic()
+            try:
+                await self._download_single_pdf(
+                    paper_id, url, session, destination_path=pdf_path
+                )
+            except asyncio.TimeoutError:
+                logger.warning("Timeout while downloading PDF for {pid}", pid=paper_id)
+                return None
+            except RequestsError as e:
+                logger.warning(
+                    "HTTP/client error for {pid}: {err}", pid=paper_id, err=str(e)
+                )
+                return None
+            except Exception as e:
+                logger.warning(
+                    "Download failed for {pid}: {err}", pid=paper_id, err=str(e)
+                )
+                return None
+            dt_download = time.monotonic() - t0
+
+            # extract and validate
+            t1 = time.monotonic()
+            try:
+                text = await self._extract_and_validate(pdf_path, paper_id)
+            except PdfExtractionError as e:
+                logger.warning(
+                    "Extraction failed for {pid}: {err}", pid=paper_id, err=str(e)
+                )
+                return None
+            except Exception as e:
+                logger.warning(
+                    "Unexpected extraction error for {pid}: {err}",
+                    pid=paper_id,
+                    err=str(e),
+                )
+                return None
+            dt_extract = time.monotonic() - t1
+
+            logger.info(
+                "Extracted PDF for {pid} (text_length={n}) download={d:.2f}s extract={e:.2f}s",
+                pid=paper_id,
+                n=len(text),
+                d=dt_download,
+                e=dt_extract,
             )
-            return None
-        except Exception as e:
-            logger.warning("Download failed for {pid}: {err}", pid=paper_id, err=str(e))
-            return None
-        dt_download = time.monotonic() - t0
 
-        # extract and validate
-        t1 = time.monotonic()
-        try:
-            text = await self._extract_and_validate(tmp_path, paper_id)
-        except PdfExtractionError as e:
-            logger.warning(
-                "Extraction failed for {pid}: {err}", pid=paper_id, err=str(e)
+            out = dict(paper)
+            out.update(
+                {
+                    "text": text,
+                    "text_source": "pdf",
+                    "extraction_error": None,
+                }
             )
-            return None
-        except Exception as e:
-            logger.warning(
-                "Unexpected extraction error for {pid}: {err}", pid=paper_id, err=str(e)
-            )
-            return None
-        dt_extract = time.monotonic() - t1
-
-        # cleanup temp
-        try:
-            if tmp_path and os.path.exists(tmp_path):
-                os.remove(tmp_path)
-        except Exception:
-            pass
-
-        logger.info(
-            "Extracted PDF for {pid} (text_length={n}) download={d:.2f}s extract={e:.2f}s",
-            pid=paper_id,
-            n=len(text),
-            d=dt_download,
-            e=dt_extract,
-        )
-
-        out = dict(paper)
-        out.update(
-            {
-                "text": text,
-                "text_source": "pdf",
-                "extraction_error": None,
-            }
-        )
-        return out
+            return out
 
     async def _download_single_pdf(
-        self, paper_id: str, url: str, session: AsyncSession
-    ) -> str:
-        """Stream-download a single PDF to a temp file and return its path.
+        self,
+        paper_id: str,
+        url: str,
+        session: AsyncSession,
+        destination_path: str,
+    ) -> None:
+        """Stream-download a single PDF to the destination path.
 
         Raises RequestsError for network issues or HTTP status >= 400.
         """
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-        tmp_path = tmp.name
-        tmp.close()
+        resp = await session.get(url, stream=True)
+        status = resp.status_code
+        if status >= 400:
+            # log specific HTTP errors
+            logger.warning(
+                "HTTP {status} when fetching PDF for {pid}",
+                status=status,
+                pid=paper_id,
+            )
+            raise RequestsError(f"HTTP {status}")
 
-        try:
-            resp = await session.get(url, stream=True)
-            status = resp.status_code
-            if status >= 400:
-                # log specific HTTP errors
-                logger.warning(
-                    "HTTP {status} when fetching PDF for {pid}",
-                    status=status,
-                    pid=paper_id,
-                )
-                raise RequestsError(f"HTTP {status}")
-
-            with open(tmp_path, "wb") as fh:
-                async for chunk in resp.aiter_content(chunk_size=self._CHUNK_SIZE):
-                    if not chunk:
-                        continue
-                    fh.write(chunk)
-
-        except RequestsError:
-            # ensure file removed on failure
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
-            raise
-
-        return tmp_path
+        with open(destination_path, "wb") as fh:
+            async for chunk in resp.aiter_content(chunk_size=self._CHUNK_SIZE):
+                if not chunk:
+                    continue
+                fh.write(chunk)
 
     async def _extract_and_validate(self, tmp_path: str, paper_id: str) -> str:
         """Run PyMuPDF extraction in a thread and validate text length.

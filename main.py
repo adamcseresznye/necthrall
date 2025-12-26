@@ -17,6 +17,7 @@ from datetime import datetime
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from loguru import logger
 from nicegui import ui
 from pydantic import BaseModel, Field
@@ -77,66 +78,80 @@ async def lifespan(app: FastAPI):
     Lifespan context manager that handles startup and shutdown logic.
     Replaces @app.on_event("startup").
     """
+    # Initialize state attributes to avoid AttributeErrors if startup fails
+    app.state.search_queue = asyncio.Queue()
+    app.state.query_service = None
+    app.state.embedding_model = None
+    app.state.workers = []
+
     # --- STARTUP LOGIC ---
     try:
-        import config
+        from config.config import get_settings
+        from config.embedding_config import init_embedding
         from services.query_service import QueryService
 
-        # Initialize embedding model if available
-        embedding_loaded = False
+        # 1. Load Settings
+        settings = get_settings()
+        settings.validate_keys()
+
+        # 2. Init Embedding Model (puts it on app.state.embedding_model)
         embedding_model = None
         try:
-            from config.embedding_config import init_embedding
-
-            await init_embedding(app)
-            if hasattr(app.state, "embedding_model"):
-                embedding_model = app.state.embedding_model
-                embedding_loaded = True
+            embedding_model = await init_embedding()
+            app.state.embedding_model = embedding_model
+            if embedding_model:
                 logger.info("✅ Embedding model loaded successfully")
-        except ImportError as e:
-            logger.warning(f"⚠️ Embedding config module not found: {e}")
-        except RuntimeError as e:
-            logger.warning(f"⚠️ ONNX model file missing: {e}")
-        except Exception:
-            logger.exception("⚠️ Embedding model failed to initialize")
+            else:
+                logger.warning("⚠️ Embedding model failed to load")
+        except Exception as e:
+            logger.warning(f"⚠️ Embedding model initialization failed: {e}")
+            # app.state.embedding_model is already None
 
-        # Initialize QueryService with embedding model
-        app.state.query_service = QueryService(embedding_model=embedding_model)
+        # 3. Create Singleton QueryService
+        # This will internally create Discovery, Ingestion, and RAG services
+        query_service = QueryService(settings=settings, embedding_model=embedding_model)
+
+        # 4. Store in State
+        app.state.query_service = query_service
         logger.info("🚀 Query service initialized")
 
-        # Initialize search queue and worker
-        app.state.search_queue = asyncio.Queue()
+        # 5. Init Workers
+        # Start 3 workers for better concurrency
+        app.state.workers = [asyncio.create_task(search_worker(app)) for _ in range(3)]
 
-        # Keep track of worker tasks to cancel them on shutdown
-        worker_tasks = []
-        # --- START 3 WORKERS (3 Lanes) ---
-        for i in range(1):
-            # Pass app instance to worker
-            task = asyncio.create_task(search_worker(app))
-            worker_tasks.append(task)
-
-        logger.info("🚀 1 Search workers initialized (Parallel Lanes)")
-
-        if embedding_loaded:
-            logger.info("✅ Embedding model injected into QueryService")
-
+        logger.info("🚀 3 Search workers initialized (Parallel Lanes)")
         logger.info("✅ Application startup successful")
-        logger.info(f"Query optimization model: {config.QUERY_OPTIMIZATION_MODEL}")
-        logger.info(f"Synthesis model: {config.SYNTHESIS_MODEL}")
+        logger.info(f"Query optimization model: {settings.QUERY_OPTIMIZATION_MODEL}")
+        logger.info(f"Synthesis model: {settings.SYNTHESIS_MODEL}")
 
     except Exception as e:
-        logger.exception("❌ Configuration validation failed")
-        sys.exit(1)
+        logger.critical(f"Failed to initialize application: {e}")
+        # In production, you might want to exit here, but for dev we'll continue
+        # so the UI can at least show an error
+        # app.state.query_service is already None
 
     yield  # Application runs here
 
     # --- SHUTDOWN LOGIC ---
-    logger.info("Shutting down background workers...")
-    for task in worker_tasks:
-        task.cancel()
+    logger.info("Shutting down Necthrall...")
 
-    # Wait for workers to finish cancelling
-    await asyncio.gather(*worker_tasks, return_exceptions=True)
+    # Cancel workers
+    if hasattr(app.state, "workers"):
+        logger.info("🛑 Shutting down: Cancelling workers...")
+        for worker in app.state.workers:
+            worker.cancel()
+        await asyncio.gather(*app.state.workers, return_exceptions=True)
+
+    # Close services
+    if hasattr(app.state, "query_service") and app.state.query_service:
+        await app.state.query_service.close()
+
+    logger.info("Shutdown complete")
+
+    logger.info("🛑 Shutting down: Closing services...")
+    if hasattr(app.state, "query_service"):
+        await app.state.query_service.close()
+
     logger.info("Shutdown complete")
 
 
@@ -146,6 +161,9 @@ app = FastAPI(
     version="3.0.0",
     lifespan=lifespan,  # Register the lifespan handler here
 )
+
+# Mount static files
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Configure CORS
 app.add_middleware(

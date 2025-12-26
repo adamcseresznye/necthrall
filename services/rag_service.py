@@ -9,23 +9,24 @@ Responsibilities:
 
 import asyncio
 import time
-from typing import Dict, List, Any, Optional, TYPE_CHECKING
-from dataclasses import dataclass, field
 from collections import defaultdict
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
+
 from loguru import logger
 
+from config.config import Settings
 from services.exceptions import (
-    RetrievalError,
     RerankingError,
+    RetrievalError,
     SynthesisError,
     VerificationError,
 )
-from config.config import RAG_RETRIEVAL_TOP_K, RAG_RERANK_TOP_K
 
 if TYPE_CHECKING:
+    from agents.synthesis_agent import SynthesisAgent
     from retrieval.llamaindex_retriever import LlamaIndexRetriever
     from retrieval.reranker import CrossEncoderReranker
-    from agents.synthesis_agent import SynthesisAgent
     from utils.citation_verifier import CitationVerifier
 
 
@@ -42,62 +43,40 @@ class RAGResult:
 class RAGService:
     """Service for retrieval, reranking, synthesis, and verification."""
 
-    def __init__(self, embedding_model: Any = None):
+    def __init__(self, embedding_model: Any, settings: Settings):
         """Initialize the RAG service.
 
         Args:
             embedding_model: Pre-loaded embedding model for retrieval.
+            settings: Application settings.
         """
         self.embedding_model = embedding_model
-        self._retriever = None
-        self._synthesis_agent = None
-        self._verifier = None
+        self.settings = settings
 
-        # Pre-load CrossEncoderReranker during initialization to avoid ~12s latency
-        # on first request. Import here to maintain safe DLL import order on Windows.
+        # Initialize components immediately
+        # Note: We keep imports inside __init__ to avoid circular deps and maintain safe DLL import order
+        from agents.synthesis_agent import SynthesisAgent
+        from retrieval.llamaindex_retriever import LlamaIndexRetriever
+        from retrieval.reranker import CrossEncoderReranker
+        from utils.citation_verifier import CitationVerifier
+
+        self.retriever = LlamaIndexRetriever(
+            embedding_model=embedding_model,
+            top_k=settings.RAG_RETRIEVAL_TOP_K,
+        )
+
         try:
-            from retrieval.reranker import CrossEncoderReranker
-
-            self._reranker = CrossEncoderReranker()
+            self.reranker = CrossEncoderReranker()
         except (ImportError, OSError) as e:
             logger.warning(
                 f"Could not import CrossEncoderReranker: {e}. Reranking will fail if attempted."
             )
-            self._reranker = None
+            self.reranker = None
 
-    def _get_retriever(self) -> Optional["LlamaIndexRetriever"]:
-        """Lazy initialization of hybrid retriever.
+        self.synthesis_agent = SynthesisAgent(settings=settings)
+        self.verifier = CitationVerifier()
 
-        Returns None if embedding_model is not available.
-        """
-        if self._retriever is None and self.embedding_model is not None:
-            from retrieval.llamaindex_retriever import LlamaIndexRetriever
-
-            self._retriever = LlamaIndexRetriever(
-                embedding_model=self.embedding_model,
-                top_k=RAG_RETRIEVAL_TOP_K,  # Before reranking
-            )
-        return self._retriever
-
-    def _get_reranker(self) -> "CrossEncoderReranker":
-        """Return the pre-loaded cross-encoder reranker."""
-        return self._reranker
-
-    def _get_synthesis_agent(self) -> "SynthesisAgent":
-        """Lazy initialization of synthesis agent."""
-        if self._synthesis_agent is None:
-            from agents.synthesis_agent import SynthesisAgent
-
-            self._synthesis_agent = SynthesisAgent()
-        return self._synthesis_agent
-
-    def _get_verifier(self) -> "CitationVerifier":
-        """Lazy initialization of citation verifier."""
-        if self._verifier is None:
-            from utils.citation_verifier import CitationVerifier
-
-            self._verifier = CitationVerifier()
-        return self._verifier
+        self.verifier = CitationVerifier()
 
     def _select_diverse_top_k(
         self, passages: List[Any], k: int, max_per_paper: int = 3
@@ -192,26 +171,22 @@ class RAGService:
         )
         stage_start = time.perf_counter()
         try:
-            retriever = self._get_retriever()
-            if retriever:
-                # Retrieve
-                retrieved_nodes = await asyncio.to_thread(
-                    retriever.retrieve, query, chunks
-                )
+            # Retrieve
+            retrieved_nodes = await asyncio.to_thread(
+                self.retriever.retrieve, query, chunks
+            )
 
-                # Convert nodes to simple dicts/objects if needed,
-                # but the original code seems to use the nodes directly or convert them.
-                # Let's assume retrieved_nodes are compatible with what reranker expects.
-                passages = retrieved_nodes
+            # Convert nodes to simple dicts/objects if needed,
+            # but the original code seems to use the nodes directly or convert them.
+            # Let's assume retrieved_nodes are compatible with what reranker expects.
+            passages = retrieved_nodes
 
-                timing_breakdown["retrieval"] = time.perf_counter() - stage_start
-                logger.info(
-                    "✅ Retrieval completed in {:.3f}s - retrieved {} candidates",
-                    timing_breakdown["retrieval"],
-                    len(passages),
-                )
-            else:
-                raise RetrievalError("Retriever could not be initialized")
+            timing_breakdown["retrieval"] = time.perf_counter() - stage_start
+            logger.info(
+                "✅ Retrieval completed in {:.3f}s - retrieved {} candidates",
+                timing_breakdown["retrieval"],
+                len(passages),
+            )
         except Exception as e:
             logger.exception("Retrieval failed")
             raise RetrievalError(f"Failed to retrieve passages: {str(e)}") from e
@@ -232,20 +207,19 @@ class RAGService:
         )
         stage_start = time.perf_counter()
         try:
-            reranker = self._get_reranker()
-            if reranker:
+            if self.reranker:
                 # Rerank a larger pool (all retrieved) to allow for diversity filtering
                 reranked_passages = await asyncio.to_thread(
-                    reranker.rerank, query, passages, top_k=len(passages)
+                    self.reranker.rerank, query, passages, top_k=len(passages)
                 )
 
                 # Apply diversity filter
                 logger.info(
                     "Applying diversity filter: selecting top {} with max 3 per paper",
-                    RAG_RERANK_TOP_K,
+                    self.settings.RAG_RERANK_TOP_K,
                 )
                 passages = self._select_diverse_top_k(
-                    reranked_passages, k=RAG_RERANK_TOP_K
+                    reranked_passages, k=self.settings.RAG_RERANK_TOP_K
                 )
 
                 timing_breakdown["reranking"] = time.perf_counter() - stage_start
@@ -256,9 +230,9 @@ class RAGService:
                 )
             else:
                 logger.warning(
-                    f"⚠️ Reranker not available - skipping reranking and taking top {RAG_RERANK_TOP_K}"
+                    f"⚠️ Reranker not available - skipping reranking and taking top {self.settings.RAG_RERANK_TOP_K}"
                 )
-                passages = passages[:RAG_RERANK_TOP_K]
+                passages = passages[: self.settings.RAG_RERANK_TOP_K]
                 timing_breakdown["reranking"] = 0.0
         except Exception as e:
             logger.exception("Reranking failed")
@@ -268,8 +242,7 @@ class RAGService:
         logger.info("🤖 Stage 9: Synthesis - generating answer")
         stage_start = time.perf_counter()
         try:
-            synthesis_agent = self._get_synthesis_agent()
-            answer = await synthesis_agent.synthesize(query, passages)
+            answer = await self.synthesis_agent.synthesize(query, passages)
             timing_breakdown["synthesis"] = time.perf_counter() - stage_start
             logger.info(
                 "✅ Synthesis completed in {:.3f}s", timing_breakdown["synthesis"]
@@ -286,8 +259,7 @@ class RAGService:
             logger.info("✅ Stage 10: Verification - checking citations")
             stage_start = time.perf_counter()
             try:
-                verifier = self._get_verifier()
-                verification_result = verifier.verify(answer, passages)
+                verification_result = self.verifier.verify(answer, passages)
                 timing_breakdown["verification"] = time.perf_counter() - stage_start
                 logger.info(
                     "✅ Verification completed in {:.3f}s - score: {}",

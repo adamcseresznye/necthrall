@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import time
 from typing import Any, Optional
+
 from fastapi import FastAPI
 from loguru import logger
 
@@ -62,14 +63,11 @@ def _lazy_import_onnx() -> tuple[bool, Optional[callable]]:
         return False, None
 
 
-async def init_embedding(app: FastAPI) -> None:
-    """Initialize ONNX Embedding Model and store on app state.
+async def init_embedding() -> Optional[Any]:
+    """Initialize ONNX Embedding Model.
 
-    This function handles errors gracefully to allow the app to start
-    even if the embedding model cannot be initialized.
-
-    Args:
-        app: FastAPI application instance.
+    Returns:
+        The initialized embedding model or None if initialization failed.
 
     Error Handling:
         - ImportError: onnxruntime not installed -> logs critical, continues.
@@ -87,8 +85,7 @@ async def init_embedding(app: FastAPI) -> None:
             "Embedding model not initialized: onnxruntime unavailable. "
             "Basic features will work, but embedding-based features are disabled."
         )
-        app.state.embedding_model = None
-        return
+        return None
 
     try:
         logger.info(f"Initializing Embedding Model: {MODEL_NAME} (ONNX Optimized)")
@@ -96,9 +93,6 @@ async def init_embedding(app: FastAPI) -> None:
         # Initialize the optimized model
         # This handles caching, validation, and ONNX session creation internally
         model = init_onnx()
-
-        # Store on app state
-        app.state.embedding_model = model
 
         duration = time.time() - start
 
@@ -120,18 +114,20 @@ async def init_embedding(app: FastAPI) -> None:
         except ImportError:
             logger.info(f"Embedding Ready: {duration:.2f}s | Dim: {EXPECTED_DIM}")
 
+        return model
+
     except RuntimeError as e:
         # Model file missing - provide helpful instructions
         logger.error(
             f"Embedding model file missing: {e}. "
             f"Run 'python scripts/setup_onnx.py' to download and convert the model."
         )
-        app.state.embedding_model = None
+        return None
 
     except Exception as e:
         # Unexpected error - log and continue
         logger.exception(f"Failed to initialize embedding model: {e}")
-        app.state.embedding_model = None
+        return None
 
 
 def get_embedding_model(app: FastAPI) -> Optional[Any]:
@@ -157,4 +153,5 @@ def get_embedding_model(app: FastAPI) -> Optional[Any]:
             "Embedding model is None - features requiring embeddings will fail"
         )
 
+    return model
     return model
