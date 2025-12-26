@@ -116,18 +116,21 @@ async def lifespan(app: FastAPI):
         logger.info("🚀 Query service initialized")
 
         # 5. Init Workers
-        # Start 3 workers for better concurrency
-        app.state.workers = [asyncio.create_task(search_worker(app)) for _ in range(3)]
+        # Start N workers for better concurrency
+        CONCURRENT_WORKERS: int = 1
+        app.state.workers = [
+            asyncio.create_task(search_worker(app)) for _ in range(CONCURRENT_WORKERS)
+        ]
 
-        logger.info("🚀 3 Search workers initialized (Parallel Lanes)")
+        logger.info(
+            f"🚀 {CONCURRENT_WORKERS} Search workers initialized (Parallel Lanes)"
+        )
         logger.info("✅ Application startup successful")
         logger.info(f"Query optimization model: {settings.QUERY_OPTIMIZATION_MODEL}")
         logger.info(f"Synthesis model: {settings.SYNTHESIS_MODEL}")
 
     except Exception as e:
         logger.critical(f"Failed to initialize application: {e}")
-        # In production, you might want to exit here, but for dev we'll continue
-        # so the UI can at least show an error
         # app.state.query_service is already None
 
     yield  # Application runs here
@@ -285,4 +288,4 @@ ui.run_with(
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("main:app", host="0.0.0.0", port=7860, log_level="info", reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=7860, log_level="info", reload=False)

@@ -16,7 +16,7 @@ from utils.pdf_extractor import PdfExtractionError, extract_text_from_pdf_file
 HEADERS = {
     # Modern User-Agent (Chrome 120+)
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    # Mimic coming from Google Scholar (Crucial for bypassing blocks)
+    # Mimic coming from Google Scholar
     "Referer": "https://scholar.google.com/",
     # Standard browser Accept headers
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
@@ -136,8 +136,8 @@ class AcquisitionAgent:
                 # Collect successful results up to target
                 for res in results:
                     # We can restrict the number of acquired PDFs here
-                    # if acquired_pdfs >= TARGET_PDF_COUNT:
-                    #    break
+                    if acquired_pdfs >= TARGET_PDF_COUNT:
+                        break
 
                     if res and res.get("text"):
                         paper_id = res.get("paperId") or res.get("id")

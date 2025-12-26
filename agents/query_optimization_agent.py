@@ -19,12 +19,7 @@ from utils.llm_router import LLMRouter
 class QueryOptimizationAgent:
     """Agent that optimizes user queries for hybrid search strategy.
 
-    Uses LLM to generate four query variants:
-    - final_rephrase: Focused query for passage retrieval
-    - primary: Most specific Semantic Scholar query
-    - broad: Wider coverage query with synonyms
-    - alternative: Different terminology/framing
-
+    Uses LLM perform either query decomposition or expansion.
     Handles LLM failures gracefully by falling back to original query.
     """
 

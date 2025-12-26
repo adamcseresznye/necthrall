@@ -7,19 +7,39 @@ name = "necthrall"
 version = "0.1.0"
 description = "Necthrall Lite MVP - AI scientific research assistant"
 authors = [
-    {name = "Adam Cseresznye", email = "adam@example.com"},
+    {name = "Adam Cseresznye", email = "necthrall@gmail.com"},
 ]
 dependencies = [
+    # Core Framework & UI
+    "fastapi>=0.109.0",
+    "uvicorn>=0.27.0",
+    "nicegui>=1.4.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    
+    # Utilities & Networking
     "aiohttp>=3.9.0",
-    "litellm>=1.0.0",
-    "loguru>=0.7.0",
+    "httpx>=0.26.0",
     "python-dotenv>=1.0.0",
-    "pytest>=7.0.0",
-    "pytest-asyncio>=0.21.0",
-    "sentence-transformers>=2.2.0",
-    "faiss-cpu>=1.7.0",
-    "PyMuPDF>=1.23.0",
+    "loguru>=0.7.0",
+    
+    # Data Science & Machine Learning
+    "numpy>=1.26.0",
+    "pandas>=2.2.0",
+    "scikit-learn>=1.4.0",
+    "scipy>=1.12.0",
     "torch>=2.0.0",
+    
+    # RAG & Retrieval
+    "llama-index>=0.9.0",         # Required for llama_index.core.schema
+    "faiss-cpu>=1.7.0",           # Used in llamaindex_retriever.py
+    "sentence-transformers>=2.2.0",
+    "litellm>=1.0.0",
+    "PyMuPDF>=1.23.0",
+    
+    # Search Algorithms (You are currently using both)
+    "bm25s>=0.1.0",              # Used in ranking_agent.py
+    "rank_bm25>=0.2.0",          # Used in llamaindex_retriever.py
 ]
 requires-python = ">=3.11"
 readme = "README.md"

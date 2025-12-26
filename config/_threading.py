@@ -27,4 +27,3 @@ if "OMP_NUM_THREADS" not in os.environ:
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 logger.info(f"⚡ Threading Config: OMP_NUM_THREADS={os.environ.get('OMP_NUM_THREADS')}")
-logger.info(f"⚡ Threading Config: OMP_NUM_THREADS={os.environ.get('OMP_NUM_THREADS')}")

@@ -6,9 +6,10 @@ This avoids Windows DLL conflicts between torch and onnxruntime.
 Threading optimization is handled by config._threading (imported at package level).
 """
 
-import numpy as np
 from pathlib import Path
 from typing import List
+
+import numpy as np
 from loguru import logger
 
 # Use tokenizers library directly - it's lightweight and doesn't import torch
@@ -66,7 +67,6 @@ class ONNXEmbeddingModel:
         # Session Options - Use all available cores
         sess_options = ort.SessionOptions()
         sess_options.intra_op_num_threads = 0  # 0 = use all available cores
-        sess_options.inter_op_num_threads = 0  # 0 = use all available cores
         sess_options.graph_optimization_level = (
             ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         )

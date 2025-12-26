@@ -154,4 +154,3 @@ def get_embedding_model(app: FastAPI) -> Optional[Any]:
         )
 
     return model
-    return model

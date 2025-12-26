@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from typing import List, Any, Optional
 import time
-from loguru import logger
+from typing import Any, List, Optional
 
+import numpy as np
 from llama_index.core.node_parser import SentenceSplitter
 from llama_index.core.schema import Document
-import numpy as np
+from loguru import logger
 
-from utils.embedding_utils import batched_embed
 from models.state import State
+from utils.embedding_utils import batched_embed
 
 
 class ProcessingAgent:
@@ -79,13 +79,12 @@ class ProcessingAgent:
                 continue
 
             # Text truncation to save memory on large PDFs
-            # original_len = len(text)
-            # if original_len > 40000:
-            #   text = text[:40000]
-            #    logger.warning(
-            #        f"✂️ Truncated paper {paper_id} from {original_len} to 40000 chars to save memory"
-            #    )
-
+            original_len = len(text)
+            if original_len > 40000:
+                text = text[:40000]
+                logger.warning(
+                    f"✂️ Truncated paper {paper_id} from {original_len} to 40000 chars to save memory"
+                )
             had_nonempty_passage = True
 
             logger.info({"event": "processing_paper_start", "paper_id": paper_id})
