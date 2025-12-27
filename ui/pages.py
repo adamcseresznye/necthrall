@@ -375,8 +375,10 @@ def init_ui(fastapi_app):
                                 serialized_passages.append(
                                     {
                                         "content": content_snippet,
-                                        "title": metadata.get("title", "Unknown"),
-                                        "url": metadata.get("url", ""),
+                                        "title": metadata.get("paper_title")
+                                        or metadata.get("title", "Unknown"),
+                                        "url": metadata.get("pdf_url")
+                                        or metadata.get("url", ""),
                                         "score": score,
                                         "section": metadata.get("section", ""),
                                     }

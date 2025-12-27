@@ -29,8 +29,10 @@ def render_answer(result):
         content = result.answer + "\n\n### Sources Cited\n"
         for idx, passage in enumerate(result.passages):
             metadata = getattr(passage, "metadata", {})
-            title = metadata.get("title", "Unknown Source")
-            url = metadata.get("url", "")
+            title = metadata.get("paper_title") or metadata.get(
+                "title", "Unknown Source"
+            )
+            url = metadata.get("pdf_url") or metadata.get("url", "")
             content += f"{idx + 1}. {title} - {url}\n"
 
         # Serialize to JSON to handle quotes/newlines safely
@@ -78,11 +80,13 @@ def render_sources(passages):
                 # Extract passage info
                 text = getattr(passage, "text", "")
                 metadata = getattr(passage, "metadata", {})
-                paper_title = metadata.get("title", "Unknown Source")
+                paper_title = metadata.get("paper_title") or metadata.get(
+                    "title", "Unknown Source"
+                )
                 paper_id = getattr(passage, "paper_id", "")
                 section = metadata.get("section", "")
                 # Try to get PDF URL from metadata
-                pdf_url = metadata.get("url", "")
+                pdf_url = metadata.get("pdf_url") or metadata.get("url", "")
 
                 with ui.expansion().classes("source-card").props("dense") as expansion:
                     # Header slot for title
@@ -179,7 +183,7 @@ class SearchProgress:
                     with ui.step("Reading Documents"):
                         with ui.column().classes("gap-2"):
                             ui.label(
-                                "Downloading and reading full-text PDFs..."
+                                "Reading and processing retrieved content..."
                             ).classes("text-slate-600")
                             ui.spinner("dots", size="lg", color="primary")
 
