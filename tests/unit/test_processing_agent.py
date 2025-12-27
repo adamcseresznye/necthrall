@@ -1,7 +1,7 @@
 import pytest
 
 from agents.processing_agent import ProcessingAgent
-from models.state import State
+from models.state import Passage, State
 
 
 @pytest.fixture
@@ -17,18 +17,17 @@ def test_processing_enriches_state_single_passage(make_state):
     state = make_state(
         "test",
         [
-            {
-                "paperId": "abc123",
-                "title": "Test Paper",
-                "text": "# Introduction\n"
-                + "A " * 5000
-                + "\n# Methods\n"
-                + "B " * 5000,
-                "text_source": "pdf",
-                "year": 2020,
-                "venue": "Journal of Testing",
-                "influentialCitationCount": 2,
-            }
+            Passage(
+                paper_id="abc123",
+                text="# Introduction\n" + "A " * 5000 + "\n# Methods\n" + "B " * 5000,
+                metadata={
+                    "title": "Test Paper",
+                    "text_source": "pdf",
+                    "year": 2020,
+                    "venue": "Journal of Testing",
+                    "influentialCitationCount": 2,
+                },
+            )
         ],
     )
 
@@ -51,18 +50,20 @@ def test_processing_multiple_passages_generates_chunks(make_state):
     passages = []
     for i in range(3):
         passages.append(
-            {
-                "paperId": f"p{i}",
-                "title": f"Paper {i}",
-                "text": "# Introduction\n"
+            Passage(
+                paper_id=f"p{i}",
+                text="# Introduction\n"
                 + ("X " * 4000)
                 + "\n# Results\n"
                 + ("Y " * 4000),
-                "text_source": "pdf",
-                "year": 2019 + i,
-                "venue": "Conf",
-                "influentialCitationCount": i,
-            }
+                metadata={
+                    "title": f"Paper {i}",
+                    "text_source": "pdf",
+                    "year": 2019 + i,
+                    "venue": "Conf",
+                    "influentialCitationCount": i,
+                },
+            )
         )
 
     state = make_state("multi", passages)
@@ -75,7 +76,10 @@ def test_processing_multiple_passages_generates_chunks(make_state):
 
 @pytest.mark.unit
 def test_empty_passage_is_skipped(make_state):
-    state = make_state("empty", [{"paperId": "e1", "text": "", "text_source": "pdf"}])
+    state = make_state(
+        "empty",
+        [Passage(paper_id="e1", text="", metadata={"text_source": "pdf"})],
+    )
     agent = ProcessingAgent(chunk_size=200, chunk_overlap=20)
     updated = agent.process(state)
 
@@ -91,7 +95,8 @@ def test_markdown_parser_handles_plain_text(make_state):
     # No explicit Markdown headers -> MarkdownNodeParser chunks by size
     long_text = "This is a paper without headers. " + ("word " * 3000)
     state = make_state(
-        "plaintext", [{"paperId": "f1", "text": long_text, "text_source": "pdf"}]
+        "plaintext",
+        [Passage(paper_id="f1", text=long_text, metadata={"text_source": "pdf"})],
     )
     agent = ProcessingAgent(chunk_size=400, chunk_overlap=50)
     updated = agent.process(state)
@@ -102,7 +107,7 @@ def test_markdown_parser_handles_plain_text(make_state):
 
 @pytest.mark.unit
 def test_no_passages_triggers_error():
-    state = State(query="none", passages=None)
+    state = State(query="none", passages=[])
     agent = ProcessingAgent()
     res = agent.process(state)
     assert len(res.errors) > 0

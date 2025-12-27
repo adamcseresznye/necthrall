@@ -19,6 +19,7 @@ from agents.query_optimization_agent import QueryOptimizationAgent
 from agents.ranking_agent import RankingAgent
 from agents.semantic_scholar_client import SemanticScholarClient
 from config.config import Settings
+from models.state import Paper
 from services.exceptions import (
     QualityGateError,
     QueryOptimizationError,
@@ -33,7 +34,7 @@ class DiscoveryResult:
 
     optimized_queries: Dict[str, Any]
     quality_gate: Dict[str, Any]
-    finalists: List[Dict[str, Any]]
+    finalists: List[Paper]
     timing_breakdown: Dict[str, float]
     refinement_count: int
 
@@ -226,15 +227,18 @@ class DiscoveryService:
                     refinement_count + 1,
                 )
 
-        finalists = []
+        finalists: List[Paper] = []
         if quality_result["passed"]:
             # Stage 4: Composite Scoring
             logger.info("Stage 4: Composite scoring - ranking {} papers", len(papers))
             stage_start = time.perf_counter()
             try:
+                # Convert dicts to Paper objects
+                paper_objects = [Paper(**p) for p in papers]
+
                 finalists = await asyncio.to_thread(
                     self.ranker.rank_papers,
-                    papers,
+                    paper_objects,
                     optimized_queries["final_rephrase"],
                     50,  # top_k for Base+Bonus strategy
                 )

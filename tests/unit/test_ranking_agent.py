@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from agents.ranking_agent import RankingAgent
+from models.state import Paper
 
 
 @pytest.fixture
@@ -18,15 +19,15 @@ def mock_paper_high_similarity(sample_query_embedding):
     # Create a similar embedding
     emb = sample_query_embedding + np.random.rand(384) * 0.1
     emb = emb / np.linalg.norm(emb)
-    return {
-        "paperId": "paper_high_sim",
-        "title": "High Similarity Paper",
-        "abstract": "Abstract high similarity",
-        "embedding": {"specter": emb},  # High similarity
-        "influentialCitationCount": 50,
-        "citationCount": 200,
-        "year": 2023,
-    }
+    return Paper(
+        paperId="paper_high_sim",
+        title="High Similarity Paper",
+        abstract="Abstract high similarity",
+        embedding={"specter": emb},  # High similarity
+        influentialCitationCount=50,
+        citationCount=200,
+        year=2023,
+    )
 
 
 @pytest.fixture
@@ -36,15 +37,15 @@ def mock_paper_high_citations(sample_query_embedding):
     np.random.seed(43)
     emb = sample_query_embedding - np.random.rand(384) * 0.5
     emb = emb / np.linalg.norm(emb)
-    return {
-        "paperId": "paper_high_cit",
-        "title": "High Citations Paper",
-        "abstract": "Abstract high citations",
-        "embedding": {"specter": emb},  # Less similar
-        "influentialCitationCount": 200,
-        "citationCount": 1000,
-        "year": 2015,  # Very old to allow recency boost
-    }
+    return Paper(
+        paperId="paper_high_cit",
+        title="High Citations Paper",
+        abstract="Abstract high citations",
+        embedding={"specter": emb},  # Less similar
+        influentialCitationCount=200,
+        citationCount=1000,
+        year=2015,  # Very old to allow recency boost
+    )
 
 
 @pytest.fixture
@@ -54,28 +55,28 @@ def mock_paper_recent(sample_query_embedding):
     np.random.seed(44)
     emb = sample_query_embedding + np.random.rand(384) * 0.1  # More similar
     emb = emb / np.linalg.norm(emb)
-    return {
-        "paperId": "paper_recent",
-        "title": "Recent Paper",
-        "abstract": "Abstract recent",
-        "embedding": {"specter": emb},  # Moderate similarity
-        "influentialCitationCount": 10,
-        "citationCount": 50,
-        "year": 2024,
-    }
+    return Paper(
+        paperId="paper_recent",
+        title="Recent Paper",
+        abstract="Abstract recent",
+        embedding={"specter": emb},  # Moderate similarity
+        influentialCitationCount=10,
+        citationCount=50,
+        year=2024,
+    )
 
 
 @pytest.fixture
 def mock_paper_missing_embedding():
     """A mock paper missing embedding."""
-    return {
-        "paperId": "paper_no_emb",
-        "title": "No Embedding Paper",
-        "abstract": "No embedding abstract",
-        "influentialCitationCount": 20,
-        "citationCount": 100,
-        "year": 2020,
-    }
+    return Paper(
+        paperId="paper_no_emb",
+        title="No Embedding Paper",
+        abstract="No embedding abstract",
+        influentialCitationCount=20,
+        citationCount=100,
+        year=2020,
+    )
 
 
 @pytest.fixture
@@ -83,13 +84,13 @@ def mock_paper_missing_citations(sample_query_embedding):
     """A mock paper missing citation counts."""
     emb = sample_query_embedding + np.random.rand(384) * 0.2
     emb = emb / np.linalg.norm(emb)
-    return {
-        "paperId": "paper_no_cit",
-        "title": "No Citations Paper",
-        "abstract": "No citations abstract",
-        "embedding": {"specter": emb},
-        "year": 2022,
-    }
+    return Paper(
+        paperId="paper_no_cit",
+        title="No Citations Paper",
+        abstract="No citations abstract",
+        embedding={"specter": emb},
+        year=2022,
+    )
 
 
 @pytest.fixture
@@ -97,14 +98,14 @@ def mock_paper_missing_year(sample_query_embedding):
     """A mock paper missing year."""
     emb = sample_query_embedding + np.random.rand(384) * 0.15
     emb = emb / np.linalg.norm(emb)
-    return {
-        "paperId": "paper_no_year",
-        "title": "No Year Paper",
-        "abstract": "No year abstract",
-        "embedding": {"specter": emb},
-        "influentialCitationCount": 15,
-        "citationCount": 75,
-    }
+    return Paper(
+        paperId="paper_no_year",
+        title="No Year Paper",
+        abstract="No year abstract",
+        embedding={"specter": emb},
+        influentialCitationCount=15,
+        citationCount=75,
+    )
 
 
 @pytest.mark.unit
@@ -126,13 +127,13 @@ def test_papers_ranked_correctly_by_composite_score(
 
     # Check that all have the new score fields
     for paper in finalists:
-        assert "final_score" in paper
-        assert "relevance_score" in paper
-        assert "authority_score" in paper
-        assert "recency_score" in paper
+        assert hasattr(paper, "final_score")
+        assert hasattr(paper, "relevance_score")
+        assert hasattr(paper, "authority_score")
+        assert hasattr(paper, "recency_score")
 
     # Expect high similarity paper to be among the top results
-    assert finalists[0]["paperId"] in {"paper_high_sim", "paper_recent"}
+    assert finalists[0].paperId in {"paper_high_sim", "paper_recent"}
 
 
 @pytest.mark.unit
@@ -142,32 +143,32 @@ def test_high_semantic_similarity_ranks_higher_than_low_similarity_high_citation
     """Test case 2: High semantic similarity paper ranks higher than low similarity but high citations."""
     agent = RankingAgent()
 
-    paper_sim = {
-        "paperId": "perfect_sim",
-        "title": "Perfect Sim",
-        "abstract": "abstract",
-        "embedding": {"specter": sample_query_embedding},  # Perfect similarity
-        "influentialCitationCount": 1,
-        "citationCount": 5,
-        "year": 2020,
-    }
+    paper_sim = Paper(
+        paperId="perfect_sim",
+        title="Perfect Sim",
+        abstract="abstract",
+        embedding={"specter": sample_query_embedding},  # Perfect similarity
+        influentialCitationCount=1,
+        citationCount=5,
+        year=2020,
+    )
 
-    paper_cit = {
-        "paperId": "high_cit",
-        "title": "High Cit",
-        "abstract": "abstract",
-        "embedding": {"specter": -sample_query_embedding},
-        "influentialCitationCount": 100,
-        "citationCount": 500,
-        "year": 2020,
-    }
+    paper_cit = Paper(
+        paperId="high_cit",
+        title="High Cit",
+        abstract="abstract",
+        embedding={"specter": -sample_query_embedding},
+        influentialCitationCount=100,
+        citationCount=500,
+        year=2020,
+    )
 
     papers = [paper_sim, paper_cit]
     finalists = agent.rank_papers(papers, query="test")
 
     # Verify relevance scores reflect similarity ordering (perfect_sim should have >= relevance)
     # Find the two papers in the finalists list
-    scores_by_id = {p["paperId"]: p["relevance_score"] for p in finalists}
+    scores_by_id = {p.paperId: p.relevance_score for p in finalists}
     assert scores_by_id["perfect_sim"] >= scores_by_id["high_cit"]
 
 
@@ -176,35 +177,35 @@ def test_recent_paper_gets_recency_boost(sample_query_embedding):
     """Test case 3: Recent paper (2024) gets recency boost over older paper (2015)."""
     agent = RankingAgent()
 
-    paper_recent = {
-        "paperId": "recent",
-        "title": "Recent",
-        "abstract": "Recent abstract",
-        "embedding": {"specter": sample_query_embedding},
-        "influentialCitationCount": 10,
-        "citationCount": 50,
-        "year": 2024,  # Max recency
-    }
+    paper_recent = Paper(
+        paperId="recent",
+        title="Recent",
+        abstract="Recent abstract",
+        embedding={"specter": sample_query_embedding},
+        influentialCitationCount=10,
+        citationCount=50,
+        year=2024,  # Max recency
+    )
 
-    paper_old = {
-        "paperId": "old",
-        "title": "Old",
-        "abstract": "Old abstract",
-        "embedding": {"specter": sample_query_embedding},
-        "influentialCitationCount": 10,
-        "citationCount": 50,
-        "year": 2015,  # Min recency
-    }
+    paper_old = Paper(
+        paperId="old",
+        title="Old",
+        abstract="Old abstract",
+        embedding={"specter": sample_query_embedding},
+        influentialCitationCount=10,
+        citationCount=50,
+        year=2015,  # Min recency
+    )
 
     papers = [paper_recent, paper_old]
     finalists = agent.rank_papers(papers, query="test")
 
     # Recent paper should rank at least as high as old paper
-    assert finalists[0]["paperId"] == "recent"
-    assert finalists[1]["paperId"] == "old"
+    assert finalists[0].paperId == "recent"
+    assert finalists[1].paperId == "old"
 
     # Recency scores: recent > old
-    recency_scores = {p["paperId"]: p["recency_score"] for p in finalists}
+    recency_scores = {p.paperId: p.recency_score for p in finalists}
     assert recency_scores["recent"] > recency_scores["old"]
 
 
@@ -230,8 +231,8 @@ def test_missing_fields_handled_gracefully(
 
     # Ensure score fields exist and are numeric
     for paper in finalists:
-        assert isinstance(paper.get("final_score"), float)
-        assert isinstance(paper.get("relevance_score"), float)
+        assert isinstance(paper.final_score, float)
+        assert isinstance(paper.relevance_score, float)
 
 
 @pytest.mark.unit
@@ -243,15 +244,15 @@ def test_edge_case_identical_scores(sample_query_embedding):
     papers = []
     for i in range(5):
         papers.append(
-            {
-                "paperId": f"identical_{i}",
-                "title": f"identical_{i}",
-                "abstract": "a",
-                "embedding": {"specter": sample_query_embedding},
-                "influentialCitationCount": 10,
-                "citationCount": 50,
-                "year": 2020,
-            }
+            Paper(
+                paperId=f"identical_{i}",
+                title=f"identical_{i}",
+                abstract="a",
+                embedding={"specter": sample_query_embedding},
+                influentialCitationCount=10,
+                citationCount=50,
+                year=2020,
+            )
         )
 
     finalists = agent.rank_papers(papers, query="identical")
@@ -260,12 +261,12 @@ def test_edge_case_identical_scores(sample_query_embedding):
     assert len(finalists) == 5
 
     # All should have identical scores
-    scores = [p["final_score"] for p in finalists]
+    scores = [p.final_score for p in finalists]
     # Scores should be equal (or very close) for identical inputs
     assert all(abs(s - scores[0]) < 1e-6 for s in scores)
 
     # Order should be stable-ish (we accept preserving input order)
-    assert [p["paperId"] for p in finalists] == [f"identical_{i}" for i in range(5)]
+    assert [p.paperId for p in finalists] == [f"identical_{i}" for i in range(5)]
 
 
 @pytest.mark.unit
@@ -301,15 +302,15 @@ def test_more_than_10_papers_returns_top_10(sample_query_embedding):
     for i in range(15):
         similarity_offset = i * 0.1  # Decreasing similarity
         papers.append(
-            {
-                "paperId": f"paper_{i}",
-                "title": f"paper_{i}",
-                "abstract": "a",
-                "embedding": {"specter": (sample_query_embedding - similarity_offset)},
-                "influentialCitationCount": 10,
-                "citationCount": 50,
-                "year": 2020,
-            }
+            Paper(
+                paperId=f"paper_{i}",
+                title=f"paper_{i}",
+                abstract="a",
+                embedding={"specter": (sample_query_embedding - similarity_offset)},
+                influentialCitationCount=10,
+                citationCount=50,
+                year=2020,
+            )
         )
 
     finalists = agent.rank_papers(papers, query="rank", top_k=10)
@@ -318,7 +319,7 @@ def test_more_than_10_papers_returns_top_10(sample_query_embedding):
     assert len(finalists) == 10
 
     # Should be the top 10 (highest similarity first)
-    returned_ids = [p["paperId"] for p in finalists]
+    returned_ids = [p.paperId for p in finalists]
     assert len(returned_ids) == 10
 
 
@@ -328,30 +329,30 @@ def test_log_normalization_handles_zero_citations():
     agent = RankingAgent()
 
     papers = [
-        {
-            "paperId": "zero_auth",
-            "title": "zero_auth",
-            "abstract": "a",
-            "embedding": {"specter": np.random.rand(384)},
-            "influentialCitationCount": 0,
-            "citationCount": 100,
-            "year": 2020,
-        },
-        {
-            "paperId": "zero_impact",
-            "title": "zero_impact",
-            "abstract": "a",
-            "embedding": {"specter": np.random.rand(384)},
-            "influentialCitationCount": 50,
-            "citationCount": 0,
-            "year": 2020,
-        },
+        Paper(
+            paperId="zero_auth",
+            title="zero_auth",
+            abstract="a",
+            embedding={"specter": np.random.rand(384)},
+            influentialCitationCount=0,
+            citationCount=100,
+            year=2020,
+        ),
+        Paper(
+            paperId="zero_impact",
+            title="zero_impact",
+            abstract="a",
+            embedding={"specter": np.random.rand(384)},
+            influentialCitationCount=50,
+            citationCount=0,
+            year=2020,
+        ),
     ]
 
     finalists = agent.rank_papers(papers, query="q")
 
     # At least one paper should show zero authority or impact related component
-    assert any(p.get("authority_score", 0.0) == 0.0 for p in finalists)
+    assert any(getattr(p, "authority_score", 0.0) == 0.0 for p in finalists)
 
 
 @pytest.mark.unit
@@ -360,30 +361,30 @@ def test_year_clamping():
     agent = RankingAgent()
 
     papers = [
-        {
-            "paperId": "too_old",
-            "title": "too_old",
-            "abstract": "a",
-            "embedding": {"specter": np.random.rand(384)},
-            "influentialCitationCount": 10,
-            "citationCount": 50,
-            "year": 2000,  # Below 2015
-        },
-        {
-            "paperId": "too_new",
-            "title": "too_new",
-            "abstract": "a",
-            "embedding": {"specter": np.random.rand(384)},
-            "influentialCitationCount": 10,
-            "citationCount": 50,
-            "year": 2030,  # Above 2025
-        },
+        Paper(
+            paperId="too_old",
+            title="too_old",
+            abstract="a",
+            embedding={"specter": np.random.rand(384)},
+            influentialCitationCount=10,
+            citationCount=50,
+            year=2000,  # Below 2015
+        ),
+        Paper(
+            paperId="too_new",
+            title="too_new",
+            abstract="a",
+            embedding={"specter": np.random.rand(384)},
+            influentialCitationCount=10,
+            citationCount=50,
+            year=2030,  # Above 2025
+        ),
     ]
 
     finalists = agent.rank_papers(papers, query="q")
 
     # Both should have recency score values within 0..1 after normalization
-    recency_scores = [paper["recency_score"] for paper in finalists]
+    recency_scores = [paper.recency_score for paper in finalists]
     assert all(0.0 <= s <= 1.0 for s in recency_scores)
 
 
@@ -397,15 +398,15 @@ def test_composite_score_calculation():
     papers = []
     for i in range(3):
         papers.append(
-            {
-                "paperId": f"p{i}",
-                "title": "t",
-                "abstract": "a",
-                "embedding": {"specter": np.ones(384)},
-                "influentialCitationCount": 1,
-                "citationCount": 1,
-                "year": 2020,
-            }
+            Paper(
+                paperId=f"p{i}",
+                title="t",
+                abstract="a",
+                embedding={"specter": np.ones(384)},
+                influentialCitationCount=1,
+                citationCount=1,
+                year=2020,
+            )
         )
 
     finalists = agent.rank_papers(papers, query="q")
@@ -419,41 +420,41 @@ def test_composite_score_ranking_behavior():
 
     # Create papers with different score profiles
     papers = [
-        {
-            "paperId": "high_semantic",
-            "title": "High Semantic",
-            "abstract": "high semantic abstract",
-            "embedding": {"specter": np.ones(384)},
-            "influentialCitationCount": 10,
-            "citationCount": 20,
-            "year": 2020,
-        },
-        {
-            "paperId": "high_citations",
-            "title": "High Citations",
-            "abstract": "high citations abstract",
-            "embedding": {"specter": np.zeros(384)},
-            "influentialCitationCount": 1000,
-            "citationCount": 5000,
-            "year": 2015,
-        },
-        {
-            "paperId": "high_recency",
-            "title": "High Recency",
-            "abstract": "high recency abstract",
-            "embedding": {"specter": np.zeros(384)},
-            "influentialCitationCount": 10,
-            "citationCount": 20,
-            "year": 2025,
-        },
+        Paper(
+            paperId="high_semantic",
+            title="High Semantic",
+            abstract="high semantic abstract",
+            embedding={"specter": np.ones(384)},
+            influentialCitationCount=10,
+            citationCount=20,
+            year=2020,
+        ),
+        Paper(
+            paperId="high_citations",
+            title="High Citations",
+            abstract="high citations abstract",
+            embedding={"specter": np.zeros(384)},
+            influentialCitationCount=1000,
+            citationCount=5000,
+            year=2015,
+        ),
+        Paper(
+            paperId="high_recency",
+            title="High Recency",
+            abstract="high recency abstract",
+            embedding={"specter": np.zeros(384)},
+            influentialCitationCount=10,
+            citationCount=20,
+            year=2025,
+        ),
     ]
 
     finalists = agent.rank_papers(papers, query="q")
 
     # High semantic should rank first (perfect similarity)
-    assert finalists[0]["paperId"] == "high_semantic"
+    assert finalists[0].paperId == "high_semantic"
     # High citations and recency follow (order may vary depending on ties)
-    assert set([finalists[1]["paperId"], finalists[2]["paperId"]]) == {
+    assert set([finalists[1].paperId, finalists[2].paperId]) == {
         "high_citations",
         "high_recency",
     }
@@ -474,18 +475,18 @@ def test_composite_score_recency_boost():
     }
 
     papers = [
-        {**base_paper, "paperId": "old", "title": "Old Paper", "year": 2015},
-        {**base_paper, "paperId": "new", "title": "New Paper", "year": 2025},
+        Paper(**{**base_paper, "paperId": "old", "title": "Old Paper", "year": 2015}),
+        Paper(**{**base_paper, "paperId": "new", "title": "New Paper", "year": 2025}),
     ]
 
     finalists = agent.rank_papers(papers, query="q")
 
     # New paper should rank higher due to recency boost
-    assert finalists[0]["paperId"] == "new"
-    assert finalists[1]["paperId"] == "old"
+    assert finalists[0].paperId == "new"
+    assert finalists[1].paperId == "old"
 
     # Recency scores should be greater for the newer paper
-    assert finalists[0]["recency_score"] > finalists[1]["recency_score"]
+    assert finalists[0].recency_score > finalists[1].recency_score
 
 
 @pytest.mark.unit
@@ -500,15 +501,15 @@ def test_composite_score_edge_cases():
     papers = []
     for i in range(3):
         papers.append(
-            {
-                "paperId": f"e{i}",
-                "title": "t",
-                "abstract": "a",
-                "embedding": {"specter": np.ones(384)},
-                "influentialCitationCount": 0,
-                "citationCount": 0,
-                "year": 2020,
-            }
+            Paper(
+                paperId=f"e{i}",
+                title="t",
+                abstract="a",
+                embedding={"specter": np.ones(384)},
+                influentialCitationCount=0,
+                citationCount=0,
+                year=2020,
+            )
         )
 
     finalists = agent.rank_papers(papers, query="q")

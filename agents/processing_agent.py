@@ -58,21 +58,26 @@ class ProcessingAgent:
         loop_start = time.perf_counter()
 
         for idx, passage in enumerate(state.passages):
-            paper_id = (
-                passage.get("paperId") or passage.get("paper_id") or f"paper_{idx}"
-            )
-            title = passage.get("title", "")
-            citation_count = passage.get(
-                "citationCount", passage.get("citation_count", 0)
-            )
-            year = passage.get("year") or passage.get("publication_year")
-            venue = passage.get("venue") or passage.get("journal")
-            influential = passage.get(
-                "influentialCitationCount", passage.get("influential_citation_count", 0)
-            )
-            oa_pdf = passage.get("openAccessPdf")
-            pdf_url = oa_pdf.get("url") if oa_pdf and isinstance(oa_pdf, dict) else None
-            text = passage.get("text", "") or ""
+            # Refactored to use Passage object attributes
+            paper_id = passage.paper_id or f"paper_{idx}"
+            text = passage.text or ""
+
+            # Metadata extraction
+            meta = passage.metadata
+            title = meta.get("title", "")
+            citation_count = meta.get("citationCount", 0)
+            year = meta.get("year")
+            venue = meta.get("venue")
+            influential = meta.get("influentialCitationCount", 0)
+
+            # Handle PDF URL extraction from metadata
+            oa_pdf = meta.get("openAccessPdf")
+            pdf_url = None
+            if oa_pdf and isinstance(oa_pdf, dict):
+                pdf_url = oa_pdf.get("url")
+
+            if not pdf_url:
+                pdf_url = meta.get("url")
 
             if not text.strip():
                 logger.warning({"event": "empty_passage_skipped", "paper_id": paper_id})

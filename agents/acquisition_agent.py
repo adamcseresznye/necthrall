@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 from curl_cffi.requests import AsyncSession, RequestsError
 from loguru import logger
 
-from models.state import State
+from models.state import Paper, Passage, State
 from utils.pdf_extractor import PdfExtractionError, extract_text_from_pdf_file
 
 # UPDATE THIS BLOCK
@@ -55,7 +55,7 @@ class AcquisitionAgent:
         - Bonus: Upgrade top 5 accessible papers to full PDF text
 
         Args:
-            state: State containing finalists (List[Dict] of papers)
+            state: State containing finalists (List[Paper])
 
         Returns:
             Updated state with passages containing abstract + PDF content
@@ -70,7 +70,7 @@ class AcquisitionAgent:
 
         TARGET_PDF_COUNT = 5
         acquired_pdfs = 0
-        passages_map: Dict[str, Dict[str, Any]] = {}
+        passages_map: Dict[str, Passage] = {}
 
         finalists = state.finalists
         logger.info(
@@ -84,21 +84,29 @@ class AcquisitionAgent:
         async with AsyncSession(impersonate="chrome110", headers=HEADERS) as session:
             # 1. First, add abstracts for ALL finalists (fast, synchronous)
             for paper in finalists:
-                paper_id = paper.get("paperId") or paper.get("id")
+                paper_id = paper.paperId
                 if not paper_id:
                     continue
 
-                abstract_text = paper.get("abstract", "")
+                abstract_text = paper.abstract
                 if abstract_text:
-                    abstract_passage = dict(paper)
-                    abstract_passage.update(
-                        {
-                            "text": abstract_text,
+                    passages_map[paper_id] = Passage(
+                        paper_id=paper_id,
+                        text=abstract_text,
+                        metadata={
+                            "title": paper.title,
                             "text_source": "abstract",
-                            "extraction_error": None,
-                        }
+                            "url": (
+                                paper.openAccessPdf.get("url")
+                                if paper.openAccessPdf
+                                else None
+                            ),
+                            "year": paper.year,
+                            "venue": paper.venue,
+                            "citationCount": paper.citationCount,
+                            "influentialCitationCount": paper.influentialCitationCount,
+                        },
                     )
-                    passages_map[paper_id] = abstract_passage
 
             # 2. Concurrent PDF acquisition for top candidates
             # We try the top 12 candidates to get our target of 5 PDFs
@@ -130,27 +138,34 @@ class AcquisitionAgent:
                         return None
 
                 # Launch all tasks concurrently
-                tasks = [fetch_pdf_safe(idx, p) for idx, p in pdf_candidates]
-                results = await asyncio.gather(*tasks)
+                tasks = [
+                    asyncio.create_task(fetch_pdf_safe(idx, p))
+                    for idx, p in pdf_candidates
+                ]
 
-                # Collect successful results up to target
-                for res in results:
-                    # We can restrict the number of acquired PDFs here
+                # Race tasks to completion using as_completed
+                for future in asyncio.as_completed(tasks):
+                    res = await future
+
+                    if res:
+                        passages_map[res.paper_id] = res
+                        acquired_pdfs += 1
+                        paper_title = res.metadata.get("title", "Unknown")[:60]
+                        logger.info(
+                            "Upgrading to PDF ({a}/{t}): {title}",
+                            a=acquired_pdfs,
+                            t=TARGET_PDF_COUNT,
+                            title=paper_title,
+                        )
+
+                    # Stop early if we hit the target
                     if acquired_pdfs >= TARGET_PDF_COUNT:
                         break
 
-                    if res and res.get("text"):
-                        paper_id = res.get("paperId") or res.get("id")
-                        if paper_id:
-                            passages_map[paper_id] = res
-                            acquired_pdfs += 1
-                            paper_title = res.get("title", "Unknown")[:60]
-                            logger.info(
-                                "Upgrading to PDF ({a}/{t}): {title}",
-                                a=acquired_pdfs,
-                                t=TARGET_PDF_COUNT,
-                                title=paper_title,
-                            )
+                # Cancel any remaining tasks to free resources
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
 
         elapsed = time.monotonic() - start_all
 
@@ -172,20 +187,20 @@ class AcquisitionAgent:
 
         return new_state
 
-    def _has_pdf_url(self, paper: Dict[str, Any]) -> bool:
+    def _has_pdf_url(self, paper: Paper) -> bool:
         """Check if paper has a PDF URL available."""
-        oa_pdf = paper.get("openAccessPdf")
+        oa_pdf = paper.openAccessPdf
         return bool(oa_pdf and isinstance(oa_pdf, dict) and oa_pdf.get("url"))
 
     async def _process_single(
-        self, paper: Dict[str, Any], session: AsyncSession
-    ) -> Optional[Dict[str, Any]]:
+        self, paper: Paper, session: AsyncSession
+    ) -> Optional[Passage]:
         """High-level single paper processing: download then extract/validate.
 
-        Returns a passage dict on success or None on failure.
+        Returns a Passage object on success or None on failure.
         """
-        paper_id = paper.get("paperId") or paper.get("id") or "unknown"
-        oa = paper.get("openAccessPdf")
+        paper_id = paper.paperId
+        oa = paper.openAccessPdf
         url = oa.get("url") if oa and isinstance(oa, dict) else None
 
         if not url:
@@ -242,15 +257,19 @@ class AcquisitionAgent:
                 e=dt_extract,
             )
 
-            out = dict(paper)
-            out.update(
-                {
-                    "text": text,
+            return Passage(
+                paper_id=paper_id,
+                text=text,
+                metadata={
+                    "title": paper.title,
                     "text_source": "pdf",
-                    "extraction_error": None,
-                }
+                    "url": url,
+                    "year": paper.year,
+                    "venue": paper.venue,
+                    "citationCount": paper.citationCount,
+                    "influentialCitationCount": paper.influentialCitationCount,
+                },
             )
-            return out
 
     async def _download_single_pdf(
         self,

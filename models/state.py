@@ -1,10 +1,35 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, ValidationError
-from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 from uuid import uuid4
+
 from loguru import logger
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+
+
+class Paper(BaseModel):
+    paperId: str
+    title: str
+    abstract: Optional[str] = None
+    year: Optional[int] = None
+    citationCount: int = 0
+    influentialCitationCount: int = 0
+    openAccessPdf: Optional[Dict[str, Any]] = None
+    externalIds: Optional[Dict[str, Any]] = None
+    url: Optional[str] = None
+    venue: Optional[str] = None
+    embedding: Optional[Dict[str, Any]] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class Passage(BaseModel):
+    paper_id: str
+    text: str
+    score: Optional[float] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    embedding: Optional[List[float]] = None
 
 
 class State(BaseModel):
@@ -29,14 +54,14 @@ class State(BaseModel):
     ss_variants: Optional[Dict[str, str]] = None  # {primary, broad, alternative}
 
     # Paper retrieval (Day 3)
-    papers: Optional[List[Dict[str, Any]]] = None  # Raw Semantic Scholar hits
+    papers: List[Paper] = Field(default_factory=list)  # Raw Semantic Scholar hits
 
     # Quality and ranking (Day 4-5)
     quality_gate: Optional[Dict[str, Any]] = None
-    ranked_papers: Optional[List[Dict[str, Any]]] = None
-    finalists: Optional[List[Dict[str, Any]]] = None  # Top 5-10
+    ranked_papers: List[Paper] = Field(default_factory=list)
+    finalists: List[Paper] = Field(default_factory=list)  # Top 5-10
 
-    passages: Optional[List[Dict[str, Any]]] = None
+    passages: List[Passage] = Field(default_factory=list)
 
     # Chunks produced by processing agents (LlamaIndex Documents / node objects)
     chunks: Optional[List[Any]] = None
@@ -48,10 +73,10 @@ class State(BaseModel):
     errors: List[str] = Field(default_factory=list)
 
     # Pydantic v2 config style
-    model_config = {
-        "arbitrary_types_allowed": True,
-        "validate_assignment": True,
-    }
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        validate_assignment=True,
+    )
 
     def __init__(self, **data: Any):
         # Keep simple: run BaseModel init then log creation
@@ -87,4 +112,4 @@ class State(BaseModel):
         return self.model_dump()
 
 
-__all__ = ["State"]
+__all__ = ["State", "Paper", "Passage"]

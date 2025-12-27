@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from loguru import logger
 
 from config.config import Settings
+from models.state import Passage
 from services.exceptions import (
     RerankingError,
     RetrievalError,
@@ -34,7 +35,7 @@ if TYPE_CHECKING:
 class RAGResult:
     """Result of the RAG phase."""
 
-    passages: List[Any]
+    passages: List[Passage]
     answer: Optional[str]
     citation_verification: Optional[Dict[str, Any]]
     timing_breakdown: Dict[str, float]
@@ -108,11 +109,6 @@ class RAGService:
             # Handle NodeWithScore object from llama_index
             if hasattr(passage, "node") and hasattr(passage.node, "metadata"):
                 paper_id = passage.node.metadata.get("paper_id", "unknown")
-            # Handle dict or other objects
-            elif hasattr(passage, "metadata"):
-                paper_id = passage.metadata.get("paper_id", "unknown")
-            elif isinstance(passage, dict):
-                paper_id = passage.get("metadata", {}).get("paper_id", "unknown")
 
             if paper_counts[paper_id] < max_per_paper:
                 selected_passages.append(passage)
@@ -238,6 +234,18 @@ class RAGService:
             logger.exception("Reranking failed")
             raise RerankingError(f"Failed to rerank passages: {str(e)}") from e
 
+        # Convert to Pydantic models for result
+        final_passages = []
+        for p in passages:
+            final_passages.append(
+                Passage(
+                    paper_id=p.node.metadata.get("paper_id", "unknown"),
+                    text=p.node.get_content(),
+                    score=p.score,
+                    metadata=p.node.metadata,
+                )
+            )
+
         # Stage 9: Synthesis
         logger.info("🤖 Stage 9: Synthesis - generating answer")
         stage_start = time.perf_counter()
@@ -272,7 +280,7 @@ class RAGService:
                 verification_result = {"error": str(e)}
 
         return RAGResult(
-            passages=passages,
+            passages=final_passages,
             answer=answer,
             citation_verification=verification_result,
             timing_breakdown=timing_breakdown,

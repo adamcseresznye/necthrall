@@ -20,7 +20,7 @@ from utils.embedding_utils import batched_embed
 if TYPE_CHECKING:
     from agents.acquisition_agent import AcquisitionAgent
     from agents.processing_agent import ProcessingAgent
-    from models.state import State
+    from models.state import Paper, State
 
 
 @dataclass
@@ -64,9 +64,7 @@ class IngestionService:
             )
         return self._processing_agent
 
-    async def ingest(
-        self, finalists: List[Dict[str, Any]], query: str
-    ) -> IngestionResult:
+    async def ingest(self, finalists: List["Paper"], query: str) -> IngestionResult:
         """Execute the ingestion phase (Stages 5-6).
 
         Args:
@@ -166,11 +164,11 @@ class IngestionService:
             timing_breakdown=timing_breakdown,
         )
 
-    async def ingest_abstracts(self, papers: List[Dict]) -> List[TextNode]:
+    async def ingest_abstracts(self, papers: List["Paper"]) -> List[TextNode]:
         """Ingest abstracts from papers in Fast Mode.
 
         Args:
-            papers: List of paper dictionaries.
+            papers: List of Paper objects.
 
         Returns:
             List of TextNodes with embeddings.
@@ -180,16 +178,21 @@ class IngestionService:
 
         # Create nodes from abstracts
         for paper in papers:
-            abstract = paper.get("abstract")
+            abstract = paper.abstract
             if not abstract:
                 continue
 
+            # Handle URL extraction safely from Pydantic model
+            url = paper.url
+            if not url and paper.openAccessPdf:
+                url = paper.openAccessPdf.get("url")
+
             node = TextNode(text=abstract)
             node.metadata = {
-                "paper_id": paper.get("paperId"),
-                "paper_title": paper.get("title"),
-                "url": paper.get("url") or paper.get("openAccessPdf", {}).get("url"),
-                "year": paper.get("year"),
+                "paper_id": paper.paperId,
+                "paper_title": paper.title,
+                "url": url,
+                "year": paper.year,
                 "section": "Abstract",
             }
             chunks.append(node)

@@ -1,11 +1,11 @@
 import time
 from typing import List
 
-import pytest
 import numpy as np
+import pytest
 
 from agents.processing_agent import ProcessingAgent
-from models.state import State
+from models.state import Passage, State
 
 
 class DummyEmbedModel:
@@ -29,11 +29,11 @@ def test_three_papers_get_384_embeddings():
     passages = []
     for i in range(3):
         passages.append(
-            {
-                "paperId": f"p{i}",
-                "title": f"Paper {i}",
-                "text": _make_text(600),
-            }
+            Passage(
+                paper_id=f"p{i}",
+                text=_make_text(600),
+                metadata={"title": f"Paper {i}"},
+            )
         )
 
     state = State(query="test", passages=passages)
@@ -54,8 +54,16 @@ def test_three_papers_get_384_embeddings():
 @pytest.mark.integration
 def test_chunking_failure_skips_embedding(monkeypatch):
     passages = [
-        {"paperId": "bad", "title": "Bad Paper", "text": _make_text(600)},
-        {"paperId": "good", "title": "Good Paper", "text": _make_text(600)},
+        Passage(
+            paper_id="bad",
+            text=_make_text(600),
+            metadata={"title": "Bad Paper"},
+        ),
+        Passage(
+            paper_id="good",
+            text=_make_text(600),
+            metadata={"title": "Good Paper"},
+        ),
     ]
 
     state = State(query="test2", passages=passages)
@@ -88,7 +96,13 @@ def test_chunking_failure_skips_embedding(monkeypatch):
 
 @pytest.mark.integration
 def test_metadata_preserved_through_embedding():
-    passages = [{"paperId": "meta1", "title": "Meta Paper", "text": _make_text(300)}]
+    passages = [
+        Passage(
+            paper_id="meta1",
+            text=_make_text(300),
+            metadata={"title": "Meta Paper"},
+        )
+    ]
     state = State(query="meta", passages=passages)
     agent = ProcessingAgent(chunk_size=100, chunk_overlap=10)
 
@@ -107,7 +121,13 @@ def test_metadata_preserved_through_embedding():
 def test_end_to_end_timing_for_five_papers_is_fast():
     passages = []
     for i in range(5):
-        passages.append({"paperId": f"t{i}", "title": f"T{i}", "text": _make_text(400)})
+        passages.append(
+            Passage(
+                paper_id=f"t{i}",
+                text=_make_text(400),
+                metadata={"title": f"T{i}"},
+            )
+        )
 
     state = State(query="timer", passages=passages)
     agent = ProcessingAgent(chunk_size=200, chunk_overlap=20)
@@ -137,7 +157,11 @@ def test_embedding_retry_succeeds_after_failures():
             return [[0.1 for _ in range(384)] for _ in range(len(texts))]
 
     passages = [
-        {"paperId": "r1", "title": "Retry Paper", "text": _make_text(300)}
+        Passage(
+            paper_id="r1",
+            text=_make_text(300),
+            metadata={"title": "Retry Paper"},
+        )
         for _ in range(1)
     ]
     state = State(query="retry", passages=passages)

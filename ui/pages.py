@@ -359,38 +359,34 @@ def init_ui(fastapi_app):
                         try:
                             import json
 
+                            # Serialize passages (Lightweight for localStorage)
+                            serialized_passages = []
+                            for p in result.passages:
+                                # Handle Pydantic Passage object
+                                text = getattr(p, "text", "")
+                                metadata = getattr(p, "metadata", {})
+                                score = getattr(p, "score", None)
+
+                                # Truncate content to prevent localStorage overflow
+                                content_snippet = (
+                                    text[:200] + "..." if len(text) > 200 else text
+                                )
+
+                                serialized_passages.append(
+                                    {
+                                        "content": content_snippet,
+                                        "title": metadata.get("title", "Unknown"),
+                                        "url": metadata.get("url", ""),
+                                        "score": score,
+                                        "section": metadata.get("section", ""),
+                                    }
+                                )
+
                             result_data = {
                                 "answer": result.answer,
                                 "execution_time": result.execution_time,
                                 "finalists": len(result.finalists),
-                                "passages": [
-                                    {
-                                        "content": (
-                                            passage.node.get_content()
-                                            if hasattr(passage.node, "get_content")
-                                            else str(passage.node)
-                                        ),
-                                        "title": (
-                                            passage.node.metadata.get(
-                                                "paper_title", "Unknown"
-                                            )
-                                            if hasattr(passage.node, "metadata")
-                                            else "Unknown"
-                                        ),
-                                        "section": (
-                                            passage.node.metadata.get("section", "")
-                                            if hasattr(passage.node, "metadata")
-                                            else ""
-                                        ),
-                                        "url": (
-                                            passage.node.metadata.get("pdf_url", "")
-                                            or passage.node.metadata.get("url", "")
-                                            if hasattr(passage.node, "metadata")
-                                            else ""
-                                        ),
-                                    }
-                                    for passage in result.passages
-                                ],
+                                "passages": serialized_passages,
                                 "query": query_text,
                             }
                             ui.run_javascript(
@@ -591,15 +587,14 @@ def init_ui(fastapi_app):
                                         ):
                                             with expansion.add_slot("header"):
                                                 with ui.column().classes("w-full"):
-                                                    ui.label(passage["title"]).classes(
-                                                        "source-title"
-                                                    )
+                                                    ui.label(
+                                                        passage.get("title", "Unknown")
+                                                    ).classes("source-title")
 
                                                     meta_parts = []
-                                                    if passage["section"]:
-                                                        meta_parts.append(
-                                                            passage["section"]
-                                                        )
+                                                    section = passage.get("section")
+                                                    if section:
+                                                        meta_parts.append(section)
                                                     meta_parts.append(
                                                         f"Citation [{idx + 1}]"
                                                     )
@@ -607,14 +602,15 @@ def init_ui(fastapi_app):
                                                         " • ".join(meta_parts)
                                                     ).classes("source-meta")
 
-                                                    if passage["url"]:
+                                                    url = passage.get("url")
+                                                    if url:
                                                         with ui.row().classes(
                                                             "items-center mt-2"
                                                         ):
                                                             with (
                                                                 ui.element("a")
                                                                 .props(
-                                                                    f'href="{passage["url"]}" target="_blank"'
+                                                                    f'href="{url}" target="_blank"'
                                                                 )
                                                                 .classes(
                                                                     "source-link-btn"
@@ -633,9 +629,9 @@ def init_ui(fastapi_app):
                                                             )
 
                                             with ui.column().classes("passage-content"):
-                                                ui.label(passage["content"]).classes(
-                                                    "source-snippet"
-                                                )
+                                                ui.label(
+                                                    passage.get("content", "")
+                                                ).classes("source-snippet")
 
                         logger.info(
                             f"✅ Restored cached result for query: {cached_data['query']}"

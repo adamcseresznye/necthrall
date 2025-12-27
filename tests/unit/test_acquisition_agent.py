@@ -97,12 +97,14 @@ async def test_acquisition_enriches_state_success(monkeypatch):
 
     assert new_state.passages is not None
     assert len(new_state.passages) == 1
-    pdf_passages = [p for p in new_state.passages if p["text_source"] == "pdf"]
+    pdf_passages = [
+        p for p in new_state.passages if p.metadata.get("text_source") == "pdf"
+    ]
     assert len(pdf_passages) == 1
     p = pdf_passages[0]
-    assert p["paperId"] == "abc123"
-    assert p["text_source"] == "pdf"
-    assert len(p["text"]) > 500
+    assert p.paper_id == "abc123"
+    assert p.metadata["text_source"] == "pdf"
+    assert len(p.text) > 500
 
 
 @pytest.mark.unit
@@ -266,11 +268,11 @@ async def test_acquisition_parallel_10_with_2_failures(monkeypatch):
     new_state = await agent.process(state)
     elapsed = time.monotonic() - start
 
-    # successful should be 8 PDFs (all successful ones, as limit is currently disabled)
+    # successful should be 5 PDFs (target limit)
     passages = new_state.passages or []
-    assert len(passages) == 8
-    pdf_passages = [p for p in passages if p["text_source"] == "pdf"]
-    assert len(pdf_passages) == 8
+    assert len(passages) == 5
+    pdf_passages = [p for p in passages if p.metadata.get("text_source") == "pdf"]
+    assert len(pdf_passages) == 5
     # requirement: return in under 4 seconds in real world; here ensure it's fast
     assert elapsed < 4.0
     assert elapsed < 4.0

@@ -33,9 +33,10 @@ import sys
 # CRITICAL: Set environment variables BEFORE any imports that might use parallel processing
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
-import pytest
+from typing import TYPE_CHECKING, List
 from unittest.mock import AsyncMock, MagicMock, patch
-from typing import List, TYPE_CHECKING
+
+import pytest
 
 # Lazy imports - only for type hints, actual imports happen in fixtures
 if TYPE_CHECKING:
@@ -125,8 +126,9 @@ def client(app):
 @pytest.fixture
 def mock_pipeline_result():
     """Create a mock PipelineResult with realistic data."""
-    from services.query_service import PipelineResult
     from llama_index.core.schema import NodeWithScore, TextNode
+
+    from services.query_service import PipelineResult
 
     # Create mock passages with NodeWithScore objects
     mock_passages: List[NodeWithScore] = []
@@ -415,11 +417,11 @@ def test_query_endpoint_unexpected_exception_returns_500(client, app, set_test_e
 @pytest.mark.integration
 def test_query_endpoint_no_answer_returns_fallback_message(client, app, set_test_env):
     """Test that when answer is None, a fallback message is returned."""
+    from models.state import Passage
     from services.query_service import PipelineResult
-    from llama_index.core.schema import NodeWithScore, TextNode
 
     # Create result with no answer
-    node = TextNode(text="Some passage text", metadata={"paper_id": "p1"})
+    passage = Passage(paper_id="p1", text="Some passage text", score=0.9)
     result_no_answer = PipelineResult(
         query="test query",
         optimized_queries={
@@ -433,7 +435,7 @@ def test_query_endpoint_no_answer_returns_fallback_message(client, app, set_test
         execution_time=1.0,
         timing_breakdown={"query_optimization": 0.5},
         success=True,
-        passages=[NodeWithScore(node=node, score=0.9)],
+        passages=[passage],
         answer=None,  # No answer generated
     )
 
@@ -496,5 +498,7 @@ def test_query_endpoint_response_time_reasonable(
         elapsed = time.time() - start
 
     assert response.status_code == 200
+    # With mocked pipeline, response should be fast
+    assert elapsed < 1.0, f"Response took {elapsed:.2f}s, expected < 1s"
     # With mocked pipeline, response should be fast
     assert elapsed < 1.0, f"Response took {elapsed:.2f}s, expected < 1s"

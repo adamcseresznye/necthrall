@@ -1,8 +1,9 @@
 """Reusable UI components for Necthrall."""
 
-from nicegui import ui
-from loguru import logger
 import json
+
+from loguru import logger
+from nicegui import ui
 
 
 def render_loading():
@@ -27,11 +28,9 @@ def render_answer(result):
         """Construct and copy content to clipboard."""
         content = result.answer + "\n\n### Sources Cited\n"
         for idx, passage in enumerate(result.passages):
-            metadata = (
-                passage.node.metadata if hasattr(passage.node, "metadata") else {}
-            )
-            title = metadata.get("paper_title", "Unknown Source")
-            url = metadata.get("pdf_url", "") or metadata.get("url", "")
+            metadata = getattr(passage, "metadata", {})
+            title = metadata.get("title", "Unknown Source")
+            url = metadata.get("url", "")
             content += f"{idx + 1}. {title} - {url}\n"
 
         # Serialize to JSON to handle quotes/newlines safely
@@ -77,19 +76,13 @@ def render_sources(passages):
         for idx, passage in enumerate(passages):
             try:
                 # Extract passage info
-                text = (
-                    passage.node.get_content()
-                    if hasattr(passage.node, "get_content")
-                    else str(passage.node)
-                )
-                metadata = (
-                    passage.node.metadata if hasattr(passage.node, "metadata") else {}
-                )
-                paper_title = metadata.get("paper_title", "Unknown Source")
-                paper_id = metadata.get("paper_id", "")
+                text = getattr(passage, "text", "")
+                metadata = getattr(passage, "metadata", {})
+                paper_title = metadata.get("title", "Unknown Source")
+                paper_id = getattr(passage, "paper_id", "")
                 section = metadata.get("section", "")
                 # Try to get PDF URL from metadata
-                pdf_url = metadata.get("pdf_url", "") or metadata.get("url", "")
+                pdf_url = metadata.get("url", "")
 
                 with ui.expansion().classes("source-card").props("dense") as expansion:
                     # Header slot for title

@@ -27,6 +27,7 @@ from loguru import logger
 
 from agents.query_optimization_agent import QueryOptimizationAgent
 from config.config import Settings
+from models.state import Paper, Passage
 from services.discovery_service import DiscoveryService
 from services.exceptions import (
     AcquisitionError,
@@ -68,13 +69,13 @@ class PipelineResult:
     query: str
     optimized_queries: Dict[str, Any]
     quality_gate: Dict[str, Any]
-    finalists: List[Dict[str, Any]]
+    finalists: List[Paper]
     execution_time: float
     timing_breakdown: Dict[str, float]
     success: bool
     error_message: Optional[str] = None
     error_stage: Optional[str] = None
-    passages: List[Any] = field(default_factory=list)
+    passages: List[Passage] = field(default_factory=list)
     answer: Optional[str] = None
     citation_verification: Optional[Dict[str, Any]] = None
     refinement_count: int = 0
@@ -268,5 +269,4 @@ class QueryService:
             result.success = False
             result.error_message = f"Unexpected error: {str(e)}"
             result.error_stage = "unknown"
-            return result
             return result

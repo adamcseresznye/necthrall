@@ -14,16 +14,19 @@ converts them to a DataFrame for internal processing, and returns
 a List[Dict] of ranked finalists.
 """
 
-from typing import Dict, List, Any
+from datetime import date
+from typing import Any, Dict, List
+
+import bm25s
 import numpy as np
 import pandas as pd
-import bm25s
+from loguru import logger
 from scipy.stats import rankdata
+from sklearn.decomposition import TruncatedSVD
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.decomposition import TruncatedSVD
-from loguru import logger
-from datetime import date
+
+from models.state import Paper
 
 # --- Configuration ---
 RRF_K = 60  # Constant for Reciprocal Rank Fusion (RRF)
@@ -246,18 +249,18 @@ class RankingAgent:
     """
 
     def rank_papers(
-        self, papers: List[Dict[str, Any]], query: str, top_k: int = 50
-    ) -> List[Dict[str, Any]]:
+        self, papers: List[Paper], query: str, top_k: int = 50
+    ) -> List[Paper]:
         """Rank papers using the hybrid ranking model.
 
         Args:
-            papers: List[Dict] of Semantic Scholar papers
+            papers: List[Paper] of Semantic Scholar papers
             query: The optimized query string for ranking
             top_k: Number of top papers to return (default: 50 for Base+Bonus strategy)
 
         Returns:
-            List[Dict]: Top k papers with all computed rank/score fields added,
-                        returned as a List of Dictionaries.
+            List[Paper]: Top k papers with all computed rank/score fields added,
+                        returned as a List of Paper objects.
         """
         # --- 1. Validate inputs ---
         if not isinstance(papers, list):
@@ -273,9 +276,11 @@ class RankingAgent:
             f"RankingAgent starting: {len(papers)} papers for query '{query[:50]}...'"
         )
 
-        # --- 2. Convert List[Dict] to DataFrame for internal processing ---
+        # --- 2. Convert List[Paper] to DataFrame for internal processing ---
         try:
-            df = pd.DataFrame(papers)
+            # Convert Pydantic models to dicts for DataFrame processing
+            papers_data = [p.model_dump() for p in papers]
+            df = pd.DataFrame(papers_data)
 
         except Exception as e:
             logger.error(f"Failed to create DataFrame from papers: {e}")
@@ -303,21 +308,23 @@ class RankingAgent:
         logger.debug("Computing final RRF, authority, recency, and weighted score...")
         ranked_df = _compute_final_ranking(df)
 
-        # --- 5. Convert top k back to List[Dict] ---
+        # --- 5. Convert top k back to List[Paper] ---
         finalists_df = ranked_df.head(top_k)
-        # Convert DataFrame to a list of dictionaries
-        finalists = finalists_df.to_dict("records")
+        # Convert DataFrame to a list of dictionaries, replacing NaNs with None
+        finalists_dicts = finalists_df.replace({np.nan: None}).to_dict("records")
+        # Re-validate into Paper objects
+        finalists = [Paper(**d) for d in finalists_dicts]
 
         # Log top 3
-        top_titles = [p.get("title", "Unknown") for p in finalists[:3]]
+        top_titles = [p.get("title", "Unknown") for p in finalists_dicts[:3]]
         logger.info(
             "Top 3 ranked papers: 1. '{}' (Score: {:.3f}), 2. '{}' (Score: {:.3f}), 3. '{}' (Score: {:.3f})",
-            top_titles[0] if len(finalists) > 0 else "None",
-            finalists[0]["final_score"] if len(finalists) > 0 else 0.0,
-            top_titles[1] if len(finalists) > 1 else "None",
-            finalists[1]["final_score"] if len(finalists) > 1 else 0.0,
-            top_titles[2] if len(finalists) > 2 else "None",
-            finalists[2]["final_score"] if len(finalists) > 2 else 0.0,
+            top_titles[0] if len(finalists_dicts) > 0 else "None",
+            finalists_dicts[0]["final_score"] if len(finalists_dicts) > 0 else 0.0,
+            top_titles[1] if len(finalists_dicts) > 1 else "None",
+            finalists_dicts[1]["final_score"] if len(finalists_dicts) > 1 else 0.0,
+            top_titles[2] if len(finalists_dicts) > 2 else "None",
+            finalists_dicts[2]["final_score"] if len(finalists_dicts) > 2 else 0.0,
         )
 
         logger.info(
