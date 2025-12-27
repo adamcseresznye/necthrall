@@ -2,6 +2,7 @@
 
 import asyncio
 import datetime
+import time
 from pathlib import Path
 
 import httpx
@@ -50,6 +51,8 @@ def init_ui(fastapi_app):
 
         # Get client reference for connection checking
         client = context.client
+
+        state = {"is_searching": False, "last_search_time": 0}
 
         # =====================================================================
         # DIALOG: HOW IT WORKS
@@ -226,11 +229,30 @@ def init_ui(fastapi_app):
                 # Only return False if explicitly disconnected, not transient issues
                 return not getattr(client, "is_deleted", False)
             except Exception:
-                # Assume connected on exception (avoid spurious errors)
                 return True
 
         async def handle_search():
-            nonlocal results_container
+            # Client Spam Check
+            if state["is_searching"]:
+                ui.notify("Search in progress", type="warning")
+                return
+
+            # Rate Limit Check
+            if time.time() - state["last_search_time"] < 10:
+                ui.notify(
+                    "Please wait a moment before searching again.", type="warning"
+                )
+                return
+
+            # Server Load Check
+            if fastapi_app.state.search_semaphore.locked():
+                limit = fastapi_app.state.max_concurrent_searches
+                ui.notify(
+                    f"Server is at capacity ({limit}/{limit}). Please try again later.",
+                    type="warning",
+                )
+                return
+
             query_text = search_input.value.strip()
 
             if not query_text:
@@ -245,7 +267,17 @@ def init_ui(fastapi_app):
                 )
                 return
 
+            # Update State
+            state["is_searching"] = True
+            state["last_search_time"] = time.time()
+
             # Clear previous results
+            if results_container:
+                try:
+                    results_container.clear()
+                except RuntimeError:
+                    # Client deleted, exit gracefully
+                    state["is_searching"] = False
             if results_container:
                 try:
                     results_container.clear()
@@ -390,6 +422,9 @@ def init_ui(fastapi_app):
                 except RuntimeError:
                     # Client was deleted, silently ignore
                     pass
+
+            finally:
+                state["is_searching"] = False
 
         # =====================================================================
         # HEADER

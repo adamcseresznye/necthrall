@@ -15,12 +15,19 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 from datetime import datetime
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 from nicegui import ui
 from pydantic import BaseModel, Field
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+
+# Global concurrency control
+MAX_CONCURRENT_SEARCHES = 2
+search_semaphore = asyncio.Semaphore(MAX_CONCURRENT_SEARCHES)
 
 # Configure loguru
 logger.remove()
@@ -133,6 +140,10 @@ async def lifespan(app: FastAPI):
         logger.critical(f"Failed to initialize application: {e}")
         # app.state.query_service is already None
 
+    # Expose concurrency controls to UI
+    app.state.search_semaphore = search_semaphore
+    app.state.max_concurrent_searches = MAX_CONCURRENT_SEARCHES
+
     yield  # Application runs here
 
     # --- SHUTDOWN LOGIC ---
@@ -151,12 +162,6 @@ async def lifespan(app: FastAPI):
 
     logger.info("Shutdown complete")
 
-    logger.info("🛑 Shutting down: Closing services...")
-    if hasattr(app.state, "query_service"):
-        await app.state.query_service.close()
-
-    logger.info("Shutdown complete")
-
 
 app = FastAPI(
     title="Necthrall API",
@@ -164,6 +169,11 @@ app = FastAPI(
     version="3.0.0",
     lifespan=lifespan,  # Register the lifespan handler here
 )
+
+# Initialize Rate Limiter
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -193,77 +203,88 @@ class QueryRequest(BaseModel):
 
 
 @app.post("/query")
-async def query_endpoint(request: QueryRequest):
+@limiter.limit("5/hour")
+async def query_endpoint(query_request: QueryRequest, request: Request):
     """Process a research query."""
     if not hasattr(app.state, "query_service"):
         raise HTTPException(status_code=503, detail="Query service not initialized")
 
-    try:
-        result = await app.state.query_service.process_query(request.query)
-
-        if not result.success:
-            # Handle specific error cases
-            if (
-                result.error_message
-                and "Semantic Scholar API is currently unavailable"
-                in result.error_message
-            ):
-                raise HTTPException(
-                    status_code=503,
-                    detail=result.error_message,
-                )
-
-            # Include stage in error detail for debugging
-            error_detail = (
-                result.error_message or "Pipeline failed without error message"
-            )
-            if result.error_stage:
-                error_detail = f"{error_detail} (Stage: {result.error_stage})"
-
-            raise HTTPException(
-                status_code=500,
-                detail=error_detail,
-            )
-
-        # Format citations with IDs
-        citations = []
-        if result.passages:
-            for idx, p in enumerate(result.passages, 1):
-                # Handle both dict and object access
-                text = p.get("text") if isinstance(p, dict) else getattr(p, "text", "")
-                metadata = (
-                    p.get("metadata")
-                    if isinstance(p, dict)
-                    else getattr(p, "metadata", {})
-                ).copy()
-
-                # Ensure score is in metadata if available
-                score = (
-                    p.get("score") if isinstance(p, dict) else getattr(p, "score", None)
-                )
-                if score is not None:
-                    metadata["score"] = score
-
-                citations.append({"id": idx, "text": text, "metadata": metadata})
-
-        return {
-            "query": request.query,
-            "answer": result.answer
-            or "No answer could be generated from the available sources.",
-            "citations": citations,
-            "finalists": result.finalists,
-            "execution_time": result.execution_time,
-            "timing_breakdown": result.timing_breakdown,
-            "optimized_queries": result.optimized_queries,
-            "quality_gate": result.quality_gate,
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception("Query processing failed")
+    if search_semaphore.locked():
         raise HTTPException(
-            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+            status_code=503, detail="Server is busy. Please try again later."
         )
+
+    async with search_semaphore:
+        try:
+            result = await app.state.query_service.process_query(query_request.query)
+
+            if not result.success:
+                # Handle specific error cases
+                if (
+                    result.error_message
+                    and "Semantic Scholar API is currently unavailable"
+                    in result.error_message
+                ):
+                    raise HTTPException(
+                        status_code=503,
+                        detail=result.error_message,
+                    )
+
+                # Include stage in error detail for debugging
+                error_detail = (
+                    result.error_message or "Pipeline failed without error message"
+                )
+                if result.error_stage:
+                    error_detail = f"{error_detail} (Stage: {result.error_stage})"
+
+                raise HTTPException(
+                    status_code=500,
+                    detail=error_detail,
+                )
+
+            # Format citations with IDs
+            citations = []
+            if result.passages:
+                for idx, p in enumerate(result.passages, 1):
+                    # Handle both dict and object access
+                    text = (
+                        p.get("text") if isinstance(p, dict) else getattr(p, "text", "")
+                    )
+                    metadata = (
+                        p.get("metadata")
+                        if isinstance(p, dict)
+                        else getattr(p, "metadata", {})
+                    ).copy()
+
+                    # Ensure score is in metadata if available
+                    score = (
+                        p.get("score")
+                        if isinstance(p, dict)
+                        else getattr(p, "score", None)
+                    )
+                    if score is not None:
+                        metadata["score"] = score
+
+                    citations.append({"id": idx, "text": text, "metadata": metadata})
+
+            return {
+                "query": query_request.query,
+                "answer": result.answer
+                or "No answer could be generated from the available sources.",
+                "citations": citations,
+                "finalists": result.finalists,
+                "execution_time": result.execution_time,
+                "timing_breakdown": result.timing_breakdown,
+                "optimized_queries": result.optimized_queries,
+                "quality_gate": result.quality_gate,
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception("Query processing failed")
+            raise HTTPException(
+                status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+            )
 
 
 # =============================================================================
