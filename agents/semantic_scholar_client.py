@@ -103,7 +103,12 @@ class SemanticScholarClient:
         logger.info(f"multi_query_search entry: queries= {[q[:80] for q in queries]}")
 
         session = await self._get_session()
-        tasks = [self._run_query(session, q, limit_per_query, fields) for q in queries]
+        # tasks = [self._run_query(session, q, limit_per_query, fields) for q in queries]
+        # Stagger the requests by 0.2 seconds to prevent burst rate-limiting
+        tasks = []
+        for q in queries:
+            tasks.append(self._run_query(session, q, limit_per_query, fields))
+            await asyncio.sleep(0.2)
 
         start = time.perf_counter()
         raw_results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -233,7 +238,7 @@ class SemanticScholarClient:
     ) -> List[Dict[str, Any]]:
         """Wrapper around _fetch_query that handles retries and backoff."""
         max_retries = 3
-        backoff = 0.5
+        backoff = 2
         for attempt in range(1, max_retries + 1):
             try:
                 return await self._fetch_query(session, query, limit, fields)

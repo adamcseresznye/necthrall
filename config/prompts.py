@@ -21,7 +21,8 @@ CITATION_QA_TEMPLATE = (
     "       * *Definitional:* **Core Concept: [Phrase].**\n"
     "       * *Methodological:* **Standard Protocol: [Method].**\n"
     "       * *Open:* **Scientific Consensus: [Theme].**\n"
-    "   - Follow with a high-level thesis sentence summarizing the answer.\n\n"
+    "   - Follow with a high-level thesis sentence summarizing the answer.\n"
+    "   - Relevance Filter: Before citing a source, verify it discusses the SPECIFIC topic requested. If a retrieved chunk is off-topic, ignore it.\n\n"
     "2. **THE EVIDENCE (Structured & Rigorous):**\n"
     "   - **Evidence Synthesis:** Synthesize the high-authority agreement. What is the established truth? (Cite support).\n"
     "   - **Critical Nuances:** Discuss conflicts, sexual dimorphism, in vivo vs in vitro discrepancies, or major limitations.\n\n"
@@ -62,17 +63,17 @@ QUERY_OPTIMIZATION_TEMPLATE = """You are a query optimization expert for scienti
         
         **INTENT ANALYSIS (Crucial):**
         Analyze the user's intent to optimize the 'broad' field:
-        1. **Overview/Consensus needed?** (e.g., "What is...", "How does...", "Summary of...") -> Set 'broad' to keywords + "review" OR "survey" OR "state of the art".
-        2. **Latest News needed?** (e.g., "Recent...", "Newest...", "Updates on...") -> Set 'broad' to keywords + "recent" OR "advances" OR "novel".
-        3. **Specific Details?** -> Keep 'broad' as general synonyms.
+        1. **Overview/Consensus needed?** -> Set 'broad' to Subject + "review" (pick ONE term).
+        2. **Latest News needed?** -> Set 'broad' to Subject + "recent" (pick ONE term).
+        3. **Specific Details?** -> Set 'broad' to Subject + "analysis" (pick ONE term).
 
         Output Format (JSON):
         {{
             "strategy": "expansion",
             "final_rephrase": "Clear natural language question for semantic search",
-            "primary": "3-6 specific keywords",
-            "broad": "3-6 keywords optimized for INTENT (e.g., include 'review' or 'recent' if applicable)",
-            "alternative": "3-6 keywords focusing on limitations or debates"
+            "primary": "Subject + Context (MAX 4 WORDS)",
+            "broad": "Subject + Intent (MAX 3 WORDS)",
+            "alternative": "Subject + Controversy (MAX 3 WORDS)"
         }}
 
         **Strategy B: Decomposition**
@@ -84,14 +85,16 @@ QUERY_OPTIMIZATION_TEMPLATE = """You are a query optimization expert for scienti
             "strategy": "decomposition",
             "final_rephrase": "The overarching question in clear natural language",
             "sub_queries": [
-                "First sub-question keywords",
-                "Second sub-question keywords",
+                "Subject + Subtopic 1 (MAX 4 WORDS)",
+                "Subject + Subtopic 2 (MAX 4 WORDS)",
                 "..."
             ]
         }}
 
         **CRITICAL RULES:**
-        - 'final_rephrase' is MANDATORY for BOTH strategies.
-        - For 'primary', 'broad', 'alternative', and 'sub_queries': DO NOT use boolean operators (AND, OR). Keep them short (3-6 keywords).
+        - **ABSOLUTELY NO boolean operators** (AND, OR, NOT).
+        - **ABSOLUTELY NO parentheses** or special characters.
+        - **Keep it Short:** Queries longer than 4 words often return 0 results.
+        - **Broad/Alternative:** Do not copy the full primary query. Use only the main subject + 1 modifier.
         - Return ONLY valid JSON.
         """

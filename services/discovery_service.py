@@ -101,6 +101,12 @@ class DiscoveryService:
                 ) from e
             raise SemanticScholarError(f"Failed to search papers: {str(e)}") from e
 
+        if not papers:
+            logger.warning(
+                "Search{} returned 0 papers. Skipping Quality Gate.", attempt_label
+            )
+            return [], {"passed": False, "reason": "No papers found"}
+
         # Quality Gate
         logger.info(
             "Stage 3{}: Quality gate validation - {} papers to validate",

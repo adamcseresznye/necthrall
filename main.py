@@ -85,6 +85,7 @@ async def lifespan(app: FastAPI):
     Lifespan context manager that handles startup and shutdown logic.
     Replaces @app.on_event("startup").
     """
+
     # Initialize state attributes to avoid AttributeErrors if startup fails
     app.state.search_queue = asyncio.Queue()
     app.state.query_service = None
