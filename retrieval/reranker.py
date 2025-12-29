@@ -1,106 +1,120 @@
-"""Cross-Encoder Reranker for improving retrieval relevance.
+"""Cross-Encoder Reranker using ONNX Runtime for CPU efficiency.
 
-This module implements a reranker that uses a cross-encoder model to
-re-score retrieval results for improved relevance ranking.
-
-Cross-encoders process query-document pairs together, allowing for
-richer semantic understanding compared to bi-encoder approaches.
-
-Usage:
-    from retrieval.reranker import CrossEncoderReranker
-
-    reranker = CrossEncoderReranker()
-    reranked = reranker.rerank(query="fasting benefits", nodes=retrieval_results)
-
-Performance:
-    - Re-ranking 15 items: <600ms on CPU
-    - Model: cross-encoder/ms-marco-MiniLM-L-6-v2 (lightweight, fast)
-    - CPU-only: No GPU dependencies
+This module implements a reranker that uses a quantized ONNX model
+to re-score retrieval results. This provides SOTA accuracy (via mxbai-xsmall)
+at CPU-friendly latencies (via INT8 quantization).
 """
 
 from __future__ import annotations
 
-import os
-import sys
 import time
-from typing import TYPE_CHECKING, List, Optional
+from pathlib import Path
+from typing import List, Tuple
 
-# Now safe to import llama_index (which may load onnxruntime)
-from llama_index.core.schema import NodeWithScore, TextNode
+import numpy as np
+import torch
+from llama_index.core.schema import NodeWithScore
 from loguru import logger
+from optimum.onnxruntime import ORTModelForSequenceClassification
+from transformers import AutoTokenizer
 
-# Now safe to import CrossEncoder
-from sentence_transformers import CrossEncoder
-
-# Default model - lightweight and fast for CPU inference
-DEFAULT_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+# Path matches your setup_onnx.py output
+DEFAULT_MODEL_PATH = "onnx_model_cache/mixedbread-ai_mxbai-rerank-xsmall-v1"
 
 
 class CrossEncoderReranker:
-    """Cross-encoder based reranker for improving retrieval relevance.
-
-    This class takes retrieval results and re-scores them using a cross-encoder
-    model, which processes query-document pairs together for better semantic
-    matching.
+    """ONNX-based cross-encoder reranker for improving retrieval relevance.
 
     Attributes:
-        model_name: Name of the cross-encoder model.
-        model: The loaded CrossEncoder instance.
-
-    Example:
-        >>> reranker = CrossEncoderReranker()
-        >>> results = reranker.rerank(
-        ...     query="What is fasting?",
-        ...     nodes=retriever_results,
-        ...     top_k=10
-        ... )
+        tokenizer: HuggingFace tokenizer.
+        model: ONNX Runtime inference session.
     """
 
     def __init__(
         self,
-        model_name: str = DEFAULT_MODEL,
+        model_path: str = DEFAULT_MODEL_PATH,
         device: str = "cpu",
     ):
-        """Initialize the cross-encoder reranker.
+        """Initialize the ONNX reranker.
 
         Args:
-            model_name: HuggingFace model name for the cross-encoder.
-                       Default: cross-encoder/ms-marco-MiniLM-L-6-v2
-            device: Device to run inference on. Default: 'cpu'.
+            model_path: Path to the local quantized ONNX model directory.
+            device: Device parameter (ignored for ONNX on CPU).
         """
-        self.model_name = model_name
-        self.device = device
+        self.model_path = str(model_path)
 
-        logger.info(f"Loading CrossEncoder model: {model_name} on {device}")
+        # Check if model exists
+        if not Path(self.model_path).exists():
+            raise FileNotFoundError(
+                f"ONNX model not found at {self.model_path}. "
+                "Did you run 'python scripts/setup_onnx.py'?"
+            )
+
+        logger.info(f"Loading ONNX CrossEncoder from: {self.model_path}")
         start = time.perf_counter()
 
-        self.model = CrossEncoder(
-            model_name,
-            max_length=512,
-            device=device,
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model_path)
+
+        # Load the quantized model explicitly
+        self.model = ORTModelForSequenceClassification.from_pretrained(
+            self.model_path, file_name="model_quantized.onnx"
         )
 
         load_time = time.perf_counter() - start
-        logger.info(f"CrossEncoder loaded in {load_time:.3f}s")
+        logger.info(f"ONNX Model loaded in {load_time:.3f}s")
+
+    def predict(
+        self, inputs: List[Tuple[str, str]], batch_size: int = 4
+    ) -> List[float]:
+        """Run inference on the ONNX model in batches to save memory.
+
+        Args:
+            inputs: List of (query, document) text pairs.
+            batch_size: How many pairs to process at once. Lower = Less RAM.
+
+        Returns:
+            List of float scores between 0 and 1.
+        """
+        if not inputs:
+            return []
+
+        all_scores = []
+
+        # Process in batches to prevent OOM (Out Of Memory) crashes
+        # We loop from 0 to len(inputs) in steps of batch_size
+        for i in range(0, len(inputs), batch_size):
+            batch = inputs[i : i + batch_size]
+
+            # Tokenize only this small batch
+            features = self.tokenizer(
+                batch,
+                padding=True,
+                truncation=True,
+                return_tensors="pt",
+                max_length=512,
+            )
+
+            # Inference on this small batch
+            with torch.no_grad():
+                outputs = self.model(**features)
+                logits = outputs.logits
+
+                # Sigmoid activation
+                batch_scores = 1 / (1 + np.exp(-logits.numpy()))
+
+                # Append results
+                all_scores.extend(batch_scores.flatten().tolist())
+
+        return all_scores
 
     def rerank(
         self,
         query: str,
         nodes: List[NodeWithScore],
         top_k: int = 12,
+        batch_size: int = 4,
     ) -> List[NodeWithScore]:
-        """Re-rank nodes using cross-encoder scores.
-
-        Args:
-            query: The search query.
-            nodes: List of NodeWithScore from retriever.
-            top_k: Number of top results to return (default: 12).
-
-        Returns:
-            List of NodeWithScore sorted by cross-encoder score (descending).
-            The scores are replaced with cross-encoder scores.
-        """
-        # Handle empty input
+        """Re-rank nodes using ONNX cross-encoder scores."""
         if not nodes:
             logger.warning("Empty node list provided, returning empty results")
             return []
@@ -108,16 +122,16 @@ class CrossEncoderReranker:
         logger.info(f"Reranking {len(nodes)} nodes for query: '{query[:50]}...'")
         start = time.perf_counter()
 
-        # Create query-document pairs for cross-encoder
+        # Create query-document pairs
         pairs = [(query, node.node.get_content()) for node in nodes]
 
-        # Get cross-encoder scores
-        scores = self.model.predict(pairs)
+        # Get scores via batched prediction
+        # Batch size 4 is very safe for 8GB-16GB RAM
+        scores = self.predict(pairs, batch_size=batch_size)
 
         # Create new NodeWithScore objects with updated scores
         scored_nodes = []
         for node, score in zip(nodes, scores):
-            # Create a new NodeWithScore with the cross-encoder score
             new_node = NodeWithScore(
                 node=node.node,
                 score=float(score),

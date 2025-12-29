@@ -1,49 +1,80 @@
 # scripts/setup_onnx.py
-import os
 import shutil
 from pathlib import Path
-from optimum.onnxruntime import ORTModelForFeatureExtraction
+
+from onnxruntime.quantization import QuantType, quantize_dynamic
+from optimum.onnxruntime import (
+    ORTModelForFeatureExtraction,
+    ORTModelForSequenceClassification,
+)
 from transformers import AutoTokenizer
-from onnxruntime.quantization import quantize_dynamic, QuantType
+
+# Define our two models and their specific types
+MODELS_TO_EXPORT = [
+    {
+        "id": "sentence-transformers/all-MiniLM-L6-v2",
+        "type": "feature-extraction",  # Bi-Encoder (Retriever)
+        "class": ORTModelForFeatureExtraction,
+    },
+    {
+        "id": "mixedbread-ai/mxbai-rerank-xsmall-v1",
+        "type": "sequence-classification",  # Cross-Encoder (Reranker)
+        "class": ORTModelForSequenceClassification,
+    },
+]
+
+CACHE_ROOT = Path("./onnx_model_cache")
 
 
-def export_model():
-    model_name = "sentence-transformers/all-MiniLM-L6-v2"
-    cache_dir = Path("./onnx_model_cache") / "sentence-transformers_all-MiniLM-L6-v2"
+def export_and_quantize(model_info):
+    model_id = model_info["id"]
+    # Create a clean folder structure: cache/org/model_name
+    output_dir = CACHE_ROOT / model_id.replace("/", "_")
 
-    # Define paths
-    float_path = cache_dir / "float32"
-    quant_path = cache_dir / "model_quantized.onnx"
+    quant_path = output_dir / "model_quantized.onnx"
+    float_path = output_dir / "float32"
 
     if quant_path.exists():
-        print(f"✅ Model already exists at {quant_path}")
+        print(f"✅ {model_id} already exists.")
         return
 
-    print("⏳ Exporting model to ONNX (this takes ~30s)...")
+    print(f"⏳ Exporting {model_id}...")
 
-    # 1. Export Standard ONNX
-    model = ORTModelForFeatureExtraction.from_pretrained(model_name, export=True)
+    # 1. Export to ONNX (Float32)
+    # We dynamically select the class (FeatureExtraction vs SequenceClassification)
+    model_class = model_info["class"]
+    model = model_class.from_pretrained(model_id, export=True)
     model.save_pretrained(float_path)
 
     # 2. Save Tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    tokenizer.save_pretrained(cache_dir)
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    tokenizer.save_pretrained(output_dir)
 
-    # 3. Copy Config (Critical for transformers to recognize the folder)
-    shutil.copy(float_path / "config.json", cache_dir / "config.json")
+    # 3. Copy Config
+    shutil.copy(float_path / "config.json", output_dir / "config.json")
 
-    # 4. Quantize
-    print("📉 Quantizing to INT8...")
+    # 4. Quantize to INT8
+    print(f"📉 Quantizing {model_id}...")
     quantize_dynamic(
         model_input=float_path / "model.onnx",
         model_output=quant_path,
         weight_type=QuantType.QUInt8,
     )
 
-    # 5. Cleanup
+    # 5. Cleanup float32 to save space
     shutil.rmtree(float_path)
-    print("✨ Done! Model optimized.")
+    print(f"✨ Finished {model_id}")
+
+
+def main():
+    if not CACHE_ROOT.exists():
+        CACHE_ROOT.mkdir(parents=True)
+
+    for model_info in MODELS_TO_EXPORT:
+        export_and_quantize(model_info)
+
+    print("\n🚀 All ONNX models are ready for deployment!")
 
 
 if __name__ == "__main__":
-    export_model()
+    main()
