@@ -12,17 +12,11 @@ from loguru import logger
 from models.state import Paper, Passage, State
 from utils.pdf_extractor import PdfExtractionError, extract_text_from_pdf_file
 
-# UPDATE THIS BLOCK
 HEADERS = {
-    # Modern User-Agent (Chrome 120+)
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    # Mimic coming from Google Scholar
     "Referer": "https://scholar.google.com/",
-    # Standard browser Accept headers
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Connection": "keep-alive",
+    # 'Accept-Encoding' is handled automatically by curl_cffi
     "Upgrade-Insecure-Requests": "1",
     "Sec-Fetch-Dest": "document",
     "Sec-Fetch-Mode": "navigate",
@@ -81,7 +75,7 @@ class AcquisitionAgent:
 
         start_all = time.monotonic()
 
-        async with AsyncSession(impersonate="chrome110", headers=HEADERS) as session:
+        async with AsyncSession(impersonate="chrome120", headers=HEADERS) as session:
             # 1. First, add abstracts for ALL finalists (fast, synchronous)
             for paper in finalists:
                 paper_id = paper.paperId

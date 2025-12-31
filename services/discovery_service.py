@@ -258,13 +258,42 @@ class DiscoveryService:
                     f"🔍 DETECTED INTENT: {intent_type} | APPLYING WEIGHTS: {weights}"
                 )
 
-                finalists = await asyncio.to_thread(
-                    self.ranker.rank_papers,
-                    paper_objects,
-                    optimized_queries["final_rephrase"],
-                    50,  # top_k for Base+Bonus strategy
-                    weights,
-                )
+                # Stratified Ranking Logic
+                sub_queries = optimized_queries.get("sub_queries", [])
+                if (
+                    sub_queries
+                    and isinstance(sub_queries, list)
+                    and len(sub_queries) > 1
+                ):
+                    logger.info(
+                        "Applying Stratified Ranking for {} sub-queries",
+                        len(sub_queries),
+                    )
+                    slots = 50 // len(sub_queries)
+                    finalists_set = set()
+                    finalists = []
+
+                    for sub_q in sub_queries:
+                        sub_results = await asyncio.to_thread(
+                            self.ranker.rank_papers,
+                            paper_objects,
+                            sub_q,
+                            slots,
+                            weights,
+                        )
+                        for p in sub_results:
+                            if p.paperId not in finalists_set:
+                                finalists_set.add(p.paperId)
+                                finalists.append(p)
+                else:
+                    finalists = await asyncio.to_thread(
+                        self.ranker.rank_papers,
+                        paper_objects,
+                        optimized_queries["final_rephrase"],
+                        50,  # top_k for Base+Bonus strategy
+                        weights,
+                    )
+
                 timing_breakdown["composite_scoring"] = (
                     time.perf_counter() - stage_start
                 )
