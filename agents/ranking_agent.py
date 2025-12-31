@@ -15,7 +15,7 @@ a List[Dict] of ranked finalists.
 """
 
 from datetime import date
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import bm25s
 import numpy as np
@@ -36,9 +36,9 @@ CURRENT_YEAR = date.today().year
 RECENCY_LAMBDA = 0.1  # Decay rate for recency (0.1 = ~10 year half-life)
 
 # Final ranking weights
-W_RELEVANCE = 0.60
-W_AUTHORITY = 0.35
-W_RECENCY = 0.05
+# W_RELEVANCE = 0.60
+# W_AUTHORITY = 0.35
+# W_RECENCY = 0.05
 
 
 # --- Internal Helper Functions (Operating on Pandas Data) ---
@@ -217,7 +217,7 @@ def _normalize_ranks(df: pd.DataFrame, rank_columns: List[str]) -> pd.DataFrame:
     return df
 
 
-def _compute_final_ranking(df: pd.DataFrame) -> pd.DataFrame:
+def _compute_final_ranking(df: pd.DataFrame, weights: Dict[str, float]) -> pd.DataFrame:
     """Computes the final weighted score from all signals."""
     df["rrf_relevance_score"] = _compute_rrf_score(df)
     df["rrf_relevance_rank"] = rankdata(
@@ -233,10 +233,15 @@ def _compute_final_ranking(df: pd.DataFrame) -> pd.DataFrame:
     df["authority_score"] = 1.0 - df["authority_rank_norm"]
     df["recency_score"] = 1.0 - df["recency_rank_norm"]
 
+    # Use provided weights
+    w_relevance = weights.get("relevance", 0.60)
+    w_authority = weights.get("authority", 0.35)
+    w_recency = weights.get("recency", 0.05)
+
     df["final_score"] = (
-        W_RELEVANCE * df["relevance_score"]
-        + W_AUTHORITY * df["authority_score"]
-        + W_RECENCY * df["recency_score"]
+        w_relevance * df["relevance_score"]
+        + w_authority * df["authority_score"]
+        + w_recency * df["recency_score"]
     )
 
     return df.sort_values("final_score", ascending=False)
@@ -249,7 +254,11 @@ class RankingAgent:
     """
 
     def rank_papers(
-        self, papers: List[Paper], query: str, top_k: int = 50
+        self,
+        papers: List[Paper],
+        query: str,
+        top_k: int = 50,
+        weights: Optional[Dict[str, float]] = None,
     ) -> List[Paper]:
         """Rank papers using the hybrid ranking model.
 
@@ -257,11 +266,17 @@ class RankingAgent:
             papers: List[Paper] of Semantic Scholar papers
             query: The optimized query string for ranking
             top_k: Number of top papers to return (default: 50 for Base+Bonus strategy)
+            weights: Optional dictionary of weights for 'relevance', 'authority', 'recency'.
+                     Defaults to {'relevance': 0.60, 'authority': 0.35, 'recency': 0.05}.
 
         Returns:
             List[Paper]: Top k papers with all computed rank/score fields added,
                         returned as a List of Paper objects.
         """
+        # Default weights if not provided
+        if weights is None:
+            weights = {"relevance": 0.60, "authority": 0.35, "recency": 0.05}
+
         # --- 1. Validate inputs ---
         if not isinstance(papers, list):
             raise ValueError("papers must be a list")
@@ -306,7 +321,7 @@ class RankingAgent:
         )
 
         logger.debug("Computing final RRF, authority, recency, and weighted score...")
-        ranked_df = _compute_final_ranking(df)
+        ranked_df = _compute_final_ranking(df, weights)
 
         # --- 5. Convert top k back to List[Paper] ---
         finalists_df = ranked_df.head(top_k)

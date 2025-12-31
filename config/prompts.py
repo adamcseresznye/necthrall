@@ -67,9 +67,16 @@ QUERY_OPTIMIZATION_TEMPLATE = """You are a query optimization expert for scienti
         2. **Latest News needed?** -> Set 'broad' to Subject + "recent" (pick ONE term).
         3. **Specific Details?** -> Set 'broad' to Subject + "analysis" (pick ONE term).
 
+        **INTENT CLASSIFICATION: (Semantic Analysis)**
+        Classify the user's research goal into one of three types based on the *meaning* of the question:
+        - **"news"**: The user is looking for the *frontier*. Assign this if the query implies a need for the latest findings, current state-of-the-art, emerging trends, or recent shifts in consensus (e.g., "current understanding of...", "emerging treatments for...").
+        - **"foundational"**: The user is looking for the *roots*. Assign this if the query implies a need for established theories, historical context, origin stories, or seminal definitions (e.g., "theory of...", "history of...", "principles of...").
+        - **"general"**: The user is looking for *facts*. Assign this for standard mechanistic questions, effect analysis, or broad scientific inquiries (e.g., "effect of X on Y", "how does Z work"). **Default to this if unsure.**
+
         Output Format (JSON):
         {{
             "strategy": "expansion",
+            "intent_type": "news" | "foundational" | "general",
             "final_rephrase": "Clear natural language question for semantic search",
             "primary": "Subject + Context (MAX 4 WORDS)",
             "broad": "Subject + Intent (MAX 3 WORDS)",
@@ -83,6 +90,7 @@ QUERY_OPTIMIZATION_TEMPLATE = """You are a query optimization expert for scienti
         Output Format (JSON):
         {{
             "strategy": "decomposition",
+            "intent_type": "news" | "foundational" | "general",
             "final_rephrase": "The overarching question in clear natural language",
             "sub_queries": [
                 "Subject + Subtopic 1 (MAX 4 WORDS)",

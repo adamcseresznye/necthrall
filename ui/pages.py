@@ -508,7 +508,7 @@ def init_ui(fastapi_app):
                 # Deep Search Switch (Moved below for mobile responsiveness)
                 with ui.row().classes("w-full max-w-2xl justify-end px-2 -mt-1 mb-1"):
                     deep_mode_switch = (
-                        ui.switch("Deep Search", value=True)
+                        ui.switch("Deep Search", value=False)
                         .props("dense color=primary")
                         .classes("text-slate-500 text-xs md:text-sm")
                     )

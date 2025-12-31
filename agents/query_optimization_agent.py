@@ -158,6 +158,10 @@ class QueryOptimizationAgent:
         ):
             return False
 
+        # Ensure intent_type is present, default to "general" if missing
+        if "intent_type" not in response:
+            response["intent_type"] = "general"
+
         if strategy == "decomposition":
             return (
                 "sub_queries" in response

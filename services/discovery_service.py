@@ -242,11 +242,28 @@ class DiscoveryService:
                 # Convert dicts to Paper objects
                 paper_objects = [Paper(**p) for p in papers]
 
+                # Determine weights based on intent
+                intent_type = optimized_queries.get("intent_type", "general")
+                weights = {
+                    "relevance": 0.60,
+                    "authority": 0.35,
+                    "recency": 0.05,
+                }  # Default
+
+                if intent_type == "news":
+                    weights = {"relevance": 0.50, "authority": 0.0, "recency": 0.50}
+                elif intent_type == "foundational":
+                    weights = {"relevance": 0.40, "authority": 0.60, "recency": 0.0}
+                logger.info(
+                    f"🔍 DETECTED INTENT: {intent_type} | APPLYING WEIGHTS: {weights}"
+                )
+
                 finalists = await asyncio.to_thread(
                     self.ranker.rank_papers,
                     paper_objects,
                     optimized_queries["final_rephrase"],
                     50,  # top_k for Base+Bonus strategy
+                    weights,
                 )
                 timing_breakdown["composite_scoring"] = (
                     time.perf_counter() - stage_start

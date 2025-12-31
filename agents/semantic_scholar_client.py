@@ -49,7 +49,7 @@ class SemanticScholarClient:
         # Global semaphore to cap concurrent outbound requests
         self._semaphore = asyncio.Semaphore(rate_limit)
         # Default per-request timeout (seconds) used for client sessions
-        self._timeout_seconds = 10
+        self._timeout_seconds = 30
         self._session: Optional[aiohttp.ClientSession] = None
 
     async def _get_session(self) -> aiohttp.ClientSession:
