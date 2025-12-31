@@ -37,48 +37,121 @@ pinned: false
 
 - **📄 Full-Text Analysis:** We don't just read abstracts. Necthrall downloads and chunks the actual PDFs to find evidence buried deep in Methods and Results.
 - **🛡️ Privacy First:** Completely stateless. No database, no user accounts, no history.
-- **🔍 Deep Search:** Queries **Semantic Scholar** to find hundreds of candidates per query, filtered down to the top 10 most relevant open-access papers.
+- **🔍 Deep Search:** Queries **Semantic Scholar** to find hundreds of candidates per query, filtered down to the top N most relevant open-access papers.
 - **✅ Verifiable:** Every sentence is backed by an inline citation `[1]` that links directly to the source passage.
-- **🧠 Resilient:** Built on **LiteLLM**, Necthrall prioritizes **Cerebras** for synthesis, automatically switching to **Groq** if the primary model is unavailable or fails.
-
+- **🧠 Resilient:** Built on **LiteLLM**, Necthrall automatically switches to the secondary provider if the primary one is unavailable or fails.
 ---
 
 ## 🏗️ Architecture
 
-Necthrall runs a **6-stage pipeline** for every query. It is optimized for speed (async/parallel) and transparency.
+Necthrall runs a **10-stage pipeline** for every query. It is optimized for speed (async/parallel) and transparency.
 
 ```mermaid
-graph TD
-    %% Define Custom Styles
-    classDef input fill:#6366f1,stroke:none,color:#fff,rx:10,ry:10,font-weight:bold;
-    classDef logic fill:#fff,stroke:#cbd5e1,stroke-width:1px,color:#475569,rx:5,ry:5;
-    classDef rag fill:#ecfdf5,stroke:#10b981,stroke-width:2px,color:#064e3b,rx:5,ry:5;
-    classDef llm fill:#eff6ff,stroke:#3b82f6,stroke-width:2px,color:#1e40af,rx:5,ry:5;
-    classDef result fill:#10b981,stroke:none,color:#fff,rx:10,ry:10,font-weight:bold;
+flowchart TD
+    %% Global Styles
+    classDef default fill:#f9f9f9,stroke:#333,stroke-width:1px,color:#000;
+    classDef decision fill:#fff9c4,stroke:#fbc02d,stroke-width:2px,color:#000;
+    classDef terminal fill:#263238,stroke:#333,color:#fff;
+    classDef success fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
+    classDef fail fill:#ffebee,stroke:#c62828,stroke-width:2px;
+    classDef note fill:#e1f5fe,stroke:#0277bd,stroke-dasharray: 5 5;
 
-    %% The Flow
-    Start(["🔎 User Query"]):::input --> B
+    Start([<b>User Query</b>]) --> OptStart
 
-    subgraph " 1. Retrieval Phase "
+    %% ==========================================================
+    %% PHASE 0: PRE-PROCESSING
+    %% ==========================================================
+    subgraph Phase0 [Phase 0: Planning & Optimization]
         direction TB
-        B["⚡ Query Expansion Agent<br/><i>Multi-variant generation</i>"]:::logic
-        B --> C["📚 Async Retrieval<br/><i>Semantic Scholar API (Parallel)</i>"]:::logic
-        C --> D["⚖️ Composite Reranker<br/><i>Relevance + Authority Scoring</i>"]:::logic
-        D --> E["⬇️ Document Ingestion<br/><i>Direct PDF Fetching & Parsing</i>"]:::logic
+        OptStart[<b>Generate Dual Queries</b>]
+        
+        OptFail{LLM Failure?}
+        
+        FallbackOpt[Fallback:Use Original Query]
+        SuccessOpt[Success:Use 'Final Rephrase' + Variants]
+        
+        OptStart --> OptFail
+        OptFail -- Yes --> FallbackOpt
+        OptFail -- No --> SuccessOpt
     end
 
-    E --> F
-
-    subgraph " 2. Processing Phase "
+    %% ==========================================================
+    %% PHASE 1: DISCOVERY
+    %% ==========================================================
+    subgraph Phase1 [Phase 1: Discovery Service]
         direction TB
-        F["🧠 In-Memory Vector Store<br/><i>FAISS + Dense Embeddings</i>"]:::rag
-        F --> G["🤖 Contextual Synthesis<br/><i>LLM Reasoning + Citation Mapping</i>"]:::llm
+        DiscCall[<b>Search Semantic Scholar API<br/>]
+        
+        QualityGate{Quality Gate<br/>Passed?}
+        
+        RefineLoop[<b>Refinement Loop</b><br/>Retry with 'Broad' Query]:::note
+        
+        Ranking[<b>Composite Scoring</b><br/>Relevance + Authority + Recency]
+        
+        FallbackOpt --> DiscCall
+        SuccessOpt --> DiscCall
+        
+        DiscCall --> QualityGate
+        QualityGate -- No (Attempt 1) --> RefineLoop --> DiscCall
+        QualityGate -- Yes --> Ranking
+        QualityGate -- No (Attempt 2) --> Ranking
     end
 
-    G --> H(["✨ Verified Response"]):::result
+    CheckFinalists{Any Papers<br/>Found?}
+    ExitNoPaper([STOP: Return 'No Papers Found']):::terminal
+    
+    Ranking --> CheckFinalists
+    CheckFinalists -- No --> ExitNoPaper
 
-    %% Styling Links
-    linkStyle default stroke:#94a3b8,stroke-width:2px;
+    %% ==========================================================
+    %% PHASE 2: INGESTION
+    %% ==========================================================
+    subgraph Phase2 [Phase 2: Ingestion Service]
+        direction TB
+        DeepMode{Deep Mode<br/>Enabled?}
+        
+        subgraph DeepIngest [Deep Analysis]
+            PDFDownload[<b>PDF Acquisition</b><br/>Download Full Text]
+            Processing[<b>Processing</b><br/>Chunking & Embedding]
+        end
+        
+        subgraph FastIngest [Fast Scan]
+            Abstracts[<b>Abstract Ingestion</b><br/>Use Abstracts Only]
+        end
+        
+        DeepMode -- Yes --> PDFDownload --> Processing
+        DeepMode -- No --> Abstracts
+    end
+
+    CheckChunks{Content<br/>Available?}
+    ExitNoChunks([STOP: Return 'No Content']):::terminal
+
+    CheckFinalists -- Yes --> DeepMode
+    Processing --> CheckChunks
+    Abstracts --> CheckChunks
+    CheckChunks -- No --> ExitNoChunks
+
+    %% ==========================================================
+    %% PHASE 3: RAG
+    %% ==========================================================
+    subgraph Phase3 [Phase 3: RAG Service]
+        direction TB
+        SelectQuery[Select Query:<br/>Use 'Final Rephrase' if available]
+        
+        Hybrid[<b>Hybrid Retrieval</b><br/>Vector + BM25 Search]
+        Rerank[<b>Reranking</b><br/>Cross-Encoder Re-scoring]
+        
+        Synth[<b>Synthesis</b><br/>Generate Answer with Citations]
+        Verify[<b>Verification</b><br/>Check Citation Accuracy]:::success
+    end
+
+    CheckChunks -- Yes --> SelectQuery
+    SelectQuery --> Hybrid --> Rerank --> Synth --> Verify
+    
+    Verify --> End([Final Response]):::terminal
+
+    %% Class Assignments
+    class OptFail,QualityGate,CheckFinalists,DeepMode,CheckChunks decision
 ````
 
 ### The Stack
@@ -117,7 +190,7 @@ graph TD
     python main.py
     ```
 
-    The UI will be available at `http://localhost:8080`.
+    The UI will be available at `http://localhost:7860`.
 
 -----
 
@@ -143,10 +216,13 @@ Necthrall uses **LiteLLM** for model routing. You can configure the following in
 
 ## 🙏 Acknowledgements
 
-This project is made possible by the open-science ecosystem:
+This project is made possible by the open-science ecosystem. Special thanks to:
 
-- **Semantic Scholar**: Necthrall uses the Semantic Scholar API for paper retrieval and citation data.
-- **Hugging Face**: For hosting the demo infrastructure and models.
+- **[Semantic Scholar](https://www.semanticscholar.org/)**: For their open API that powers our paper discovery.
+- **[LlamaIndex](https://www.llamaindex.ai/)**: The orchestration framework for our RAG pipeline and data ingestion.
+- **[LiteLLM](https://github.com/BerriAI/litellm)**: For providing the unified interface that makes our multi-model routing possible.
+- **[NiceGUI](https://nicegui.io/) & [FastAPI](https://fastapi.tiangolo.com/)**: For the seamless full-stack Python experience.
+- **[Hugging Face](https://huggingface.co/)**: For hosting the demo infrastructure and serving the embedding models.
 
 ## 📄 License
 
