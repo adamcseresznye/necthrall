@@ -92,7 +92,7 @@ class ProcessingAgent:
                 )
             had_nonempty_passage = True
 
-            logger.info({"event": "processing_paper_start", "paper_id": paper_id})
+            logger.debug({"event": "processing_paper_start", "paper_id": paper_id})
 
             # Create document
             doc = Document(text=text)

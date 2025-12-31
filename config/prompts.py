@@ -41,6 +41,7 @@ CITATION_QA_TEMPLATE = (
     "   - **Valid Source Range:** You have access to Sources 1 through {max_id}. **ANY CITATION > {max_id} IS A HALLUCINATION.**\n"
     "   - **Atomic Citations:** Every specific claim must be cited immediately [N].\n"
     "   - **Verification:** Do not cite a source unless the text explicitly supports the claim.\n"
+    "   - **Rule of Truth:** Never hallucinate an author name to match the user's question. If the user asks for 'Paper A' but the retrieved text is from 'Paper B', you must cite 'Paper B' and explicitly state that the information comes from 'Paper B', not 'Paper A'.\n"
     "   - **The 'Eyes-Only' Rule:** IGNORE YOUR TRAINING DATA. Use ONLY facts present in the text chunks.\n"
     "### REQUIRED OUTPUT FORMAT:\n"
     "---------------------\n"
@@ -54,55 +55,59 @@ CITATION_QA_TEMPLATE = (
 
 QUERY_OPTIMIZATION_TEMPLATE = """You are a query optimization expert for scientific research using Semantic Scholar API.
 
-        Your task: Analyze the user's query and choose the best strategy: 'expansion' or 'decomposition'.
+Your task: Analyze the user's query to determine the research intent, scope, and optimal search terms.
 
-        User input: "{query}"
+User input: "{query}"
 
-        **Strategy A: Expansion (Default)**
-        Use this for single-topic or straightforward queries.
-        
-        **INTENT ANALYSIS (Crucial):**
-        Analyze the user's intent to optimize the 'broad' field:
-        1. **Overview/Consensus needed?** -> Set 'broad' to Subject + "review" (pick ONE term).
-        2. **Latest News needed?** -> Set 'broad' to Subject + "recent" (pick ONE term).
-        3. **Specific Details?** -> Set 'broad' to Subject + "analysis" (pick ONE term).
+**1. INTENT CLASSIFICATION (Semantic Analysis):**
+Classify the user's research goal into one of three types based on the *meaning* of the question:
+- **"news"**: The user is looking for the *frontier*. Use ONLY if the query implies a need for the latest findings, current state-of-the-art, or recent shifts (e.g., "latest updates on...", "2024 findings").
+- **"foundational"**: The user is looking for the *roots*. Use if the query asks for established theories, history, **seminal papers**, or **pivotal clinical trials**.
+- **"general"**: The user is looking for *facts/synthesis*. Use for mechanistic questions, effect analysis, or specific lookup questions (e.g., "results of Sutton 2020"). **Default to this if unsure.**
 
-        **INTENT CLASSIFICATION: (Semantic Analysis)**
-        Classify the user's research goal into one of three types based on the *meaning* of the question:
-        - **"news"**: The user is looking for the *frontier*. Assign this if the query implies a need for the latest findings, current state-of-the-art, emerging trends, or recent shifts in consensus (e.g., "current understanding of...", "emerging treatments for...").
-        - **"foundational"**: The user is looking for the *roots*. Assign this if the query implies a need for established theories, historical context, origin stories, or seminal definitions (e.g., "theory of...", "history of...", "principles of...").
-        - **"general"**: The user is looking for *facts*. Assign this for standard mechanistic questions, effect analysis, or broad scientific inquiries (e.g., "effect of X on Y", "how does Z work"). **Default to this if unsure.**
+**2. SCOPE ANALYSIS (The "Switch"):**
+Determine if the user has a **Targeted** or **Thematic** interest.
+- **Targeted (Narrow):** The user mentions a specific Author (e.g., "Sutton"), Year ("2020"), Acronym ("TREAT trial"), or specific Statistic ("average weight loss").
+    * *Action:* **PRESERVE** these identifiers in the `primary` query. Do not summarize them.
+- **Thematic (Broad):** The user asks about a general concept (e.g., "benefits of fasting").
+    * *Action:* focus `primary` on the core subject. Focus `broad` on reviews/meta-analyses.
 
-        Output Format (JSON):
-        {{
-            "strategy": "expansion",
-            "intent_type": "news" | "foundational" | "general",
-            "final_rephrase": "Clear natural language question for semantic search",
-            "primary": "Subject + Context (MAX 4 WORDS)",
-            "broad": "Subject + Intent (MAX 3 WORDS)",
-            "alternative": "Subject + Controversy (MAX 3 WORDS)"
-        }}
+**3. STRATEGY SELECTION:**
 
-        **Strategy B: Decomposition**
-        Use this for complex, multi-part, or comparative queries that require breaking down.
-        Generate a list of sub-queries to be executed independently.
+**Strategy A: Expansion (Default)**
+Use this for single-topic or straightforward queries.
 
-        Output Format (JSON):
-        {{
-            "strategy": "decomposition",
-            "intent_type": "news" | "foundational" | "general",
-            "final_rephrase": "The overarching question in clear natural language",
-            "sub_queries": [
-                "Subject + Subtopic 1 (MAX 4 WORDS)",
-                "Subject + Subtopic 2 (MAX 4 WORDS)",
-                "..."
-            ]
-        }}
+Output Format (JSON):
+{{
+    "strategy": "expansion",
+    "intent_type": "news | foundational | general",
+    "final_rephrase": "Clear natural language question for semantic search",
+    "primary": "Subject + Identifiers (if Targeted) OR Context (if Thematic). MAX 6 WORDS.",
+    "broad": "Subject + 'Review'/'Meta-analysis' (if Thematic) OR Main Concept (if Targeted). MAX 4 WORDS.",
+    "alternative": "Subject + 'Clinical Trial'/'RCT' (if Targeted) OR Controversy/Mechanism (if Thematic). MAX 4 WORDS."
+}}
 
-        **CRITICAL RULES:**
-        - **ABSOLUTELY NO boolean operators** (AND, OR, NOT).
-        - **ABSOLUTELY NO parentheses** or special characters.
-        - **Keep it Short:** Queries longer than 4 words often return 0 results.
-        - **Broad/Alternative:** Do not copy the full primary query. Use only the main subject + 1 modifier.
-        - Return ONLY valid JSON.
-        """
+**Strategy B: Decomposition**
+Use this for complex, multi-part, or comparative queries that require breaking down.
+
+Output Format (JSON):
+{{
+    "strategy": "decomposition",
+    "intent_type": "general",
+    "final_rephrase": "The overarching question in clear natural language",
+    "sub_queries": [
+        "Subject + Subtopic 1 (MAX 4 WORDS)",
+        "Subject + Subtopic 2 (MAX 4 WORDS)",
+        "..."
+    ]
+}}
+
+**CRITICAL RULES:**
+- **ABSOLUTELY NO boolean operators** (AND, OR, NOT).
+- **ABSOLUTELY NO parentheses** or special characters.
+- **Length Constraint:**
+    - For **Targeted** queries: Up to 6 words allowed (to fit Author + Year + Topic).
+    - For **Thematic** queries: Keep it under 4 words (shorter is better for broad search).
+- **Diversity:** The `primary`, `broad`, and `alternative` queries must look DIFFERENT to capture different papers.
+- Return ONLY valid JSON.
+"""
