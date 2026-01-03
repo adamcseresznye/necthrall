@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     RAG_RERANK_TOP_K: int = 12
     TIMEOUT: int = 30
 
+    # Rate Limiting
+    RATE_LIMIT_QUERIES_PER_HOUR: int = 5
+    RATE_LIMIT_WINDOW_SECONDS: int = 3600
+
     # System
     LOG_LEVEL: str = "INFO"
 

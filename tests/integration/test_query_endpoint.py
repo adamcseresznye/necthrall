@@ -4,11 +4,14 @@ Tests the pipeline: query_optimization → semantic_scholar_search → quality_g
 Covers success paths, quality gate failures, and various error scenarios.
 """
 
+import os
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import numpy as np
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch, MagicMock, AsyncMock
-import numpy as np
-import os
+
+from config.config import get_settings
 
 
 @pytest.fixture
@@ -64,7 +67,7 @@ def app(set_test_env):
     # Initialize query service with mock
     from services.query_service import QueryService
 
-    app.state.query_service = QueryService(mock_embedding_model)
+    app.state.query_service = QueryService(get_settings(), mock_embedding_model)
 
     return app
 
@@ -370,5 +373,7 @@ class TestQueryEndpoint:
             response = client.post("/query", json={"query": "test query"})
 
             assert response.status_code == 500
+            data = response.json()
+            assert "unexpected error occurred" in data["detail"].lower()
             data = response.json()
             assert "unexpected error occurred" in data["detail"].lower()

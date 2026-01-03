@@ -29,16 +29,18 @@ Run these tests with:
 
 from __future__ import annotations
 
-import pytest
+from typing import Any, Dict, List
 from unittest.mock import AsyncMock, MagicMock, patch
-from typing import List, Dict, Any
+
+import pytest
 
 # Import llama_index types for fixtures
 from llama_index.core.schema import NodeWithScore, TextNode
 
-# Import query service
-from services.query_service import QueryService, PipelineResult
+from config.config import get_settings
 
+# Import query service
+from services.query_service import PipelineResult, QueryService
 
 # ============================================================================
 # Fixtures
@@ -216,7 +218,7 @@ async def test_full_pipeline_happy_path_with_synthesis(
         - All 10 timing stages are present
     """
     # Arrange
-    service = QueryService(embedding_model=mock_embedding_model)
+    service = QueryService(get_settings(), mock_embedding_model)
 
     # Define the fixed synthesis response with valid citations
     synthesis_answer = (
@@ -416,7 +418,7 @@ async def test_pipeline_with_synthesis_failure_continues_gracefully(
         - citation_verification is None when no answer
     """
     # Arrange
-    service = QueryService(embedding_model=mock_embedding_model)
+    service = QueryService(get_settings(), mock_embedding_model)
 
     with (
         patch.object(service.discovery_service, "_get_optimizer") as mock_optimizer,
@@ -523,7 +525,7 @@ async def test_pipeline_with_invalid_citations(
         - Invalid citations are captured in the result
     """
     # Arrange
-    service = QueryService(embedding_model=mock_embedding_model)
+    service = QueryService(get_settings(), mock_embedding_model)
 
     # Answer with invalid citation [99] that doesn't exist in passages
     invalid_answer = "Fasting is beneficial [1] and has many effects [99]."
@@ -643,13 +645,14 @@ async def test_synthesis_citation_validity(
     prompt design. We only validate formal [N] citations.
     """
     import re
+
     from loguru import logger
 
     # Regex pattern to extract citation indices
     citation_pattern = re.compile(r"\[(\d+)\]")
 
     # Arrange
-    service = QueryService(embedding_model=mock_embedding_model)
+    service = QueryService(get_settings(), mock_embedding_model)
     test_query = "What are the benefits of intermittent fasting?"
 
     # Define a realistic synthesis response with valid citations
@@ -826,12 +829,13 @@ async def test_synthesis_citation_validity_cardiovascular_query(
         - Answer content is substantive (not just fallback message)
     """
     import re
+
     from loguru import logger
 
     citation_pattern = re.compile(r"\[(\d+)\]")
 
     # Arrange
-    service = QueryService(embedding_model=mock_embedding_model)
+    service = QueryService(get_settings(), mock_embedding_model)
     test_query = "What are the cardiovascular risks of fasting?"
 
     # Simulate a response with multiple cardiovascular-focused citations
@@ -983,11 +987,12 @@ async def test_synthesis_no_citations_warns(
     Note: In production, this should be caught and the LLM re-prompted.
     """
     import re
+
     from loguru import logger
 
     citation_pattern = re.compile(r"\[(\d+)\]")
 
-    service = QueryService(embedding_model=mock_embedding_model)
+    service = QueryService(get_settings(), mock_embedding_model)
 
     # Answer with NO citations (edge case - LLM ignoring instructions)
     answer_without_citations = (
@@ -1090,6 +1095,10 @@ async def test_synthesis_no_citations_warns(
         # If citations were somehow included, validate them
         unique_citations = sorted(set(int(m) for m in matches))
         max_valid = len(result.passages)
+        invalid = [c for c in unique_citations if c <= 0 or c > max_valid]
+        assert len(invalid) == 0
+
+    logger.info("✓ Zero-citation edge case test completed")
         invalid = [c for c in unique_citations if c <= 0 or c > max_valid]
         assert len(invalid) == 0
 

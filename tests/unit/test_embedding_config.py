@@ -40,7 +40,8 @@ def test_init_embedding_success(monkeypatch):
     from fastapi import FastAPI
 
     app = FastAPI()
-    asyncio.get_event_loop().run_until_complete(ec.init_embedding(app))
+    model = asyncio.get_event_loop().run_until_complete(ec.init_embedding())
+    app.state.embedding_model = model
 
     assert hasattr(app.state, "embedding_model")
     model = app.state.embedding_model
@@ -65,7 +66,8 @@ def test_embedding_model_has_required_methods(monkeypatch):
     from fastapi import FastAPI
 
     app = FastAPI()
-    asyncio.get_event_loop().run_until_complete(ec.init_embedding(app))
+    model = asyncio.get_event_loop().run_until_complete(ec.init_embedding())
+    app.state.embedding_model = model
 
     model = ec.get_embedding_model(app)
     assert hasattr(model, "get_text_embedding_batch")
@@ -93,7 +95,8 @@ def test_init_embedding_missing_onnxruntime(monkeypatch):
     from fastapi import FastAPI
 
     app = FastAPI()
-    asyncio.get_event_loop().run_until_complete(ec.init_embedding(app))
+    model = asyncio.get_event_loop().run_until_complete(ec.init_embedding())
+    app.state.embedding_model = model
 
     assert hasattr(app.state, "embedding_model")
     assert app.state.embedding_model is None
@@ -119,7 +122,8 @@ def test_init_embedding_missing_model_file(monkeypatch):
     from fastapi import FastAPI
 
     app = FastAPI()
-    asyncio.get_event_loop().run_until_complete(ec.init_embedding(app))
+    model = asyncio.get_event_loop().run_until_complete(ec.init_embedding())
+    app.state.embedding_model = model
 
     assert hasattr(app.state, "embedding_model")
     assert app.state.embedding_model is None
@@ -129,6 +133,7 @@ def test_init_embedding_missing_model_file(monkeypatch):
 def test_get_embedding_model_not_initialized():
     """get_embedding_model raises RuntimeError if called before init_embedding."""
     from fastapi import FastAPI
+
     import config.embedding_config as ec
 
     app = FastAPI()
@@ -155,7 +160,8 @@ def test_get_embedding_model_returns_none_when_failed(monkeypatch):
     from fastapi import FastAPI
 
     app = FastAPI()
-    asyncio.get_event_loop().run_until_complete(ec.init_embedding(app))
+    model = asyncio.get_event_loop().run_until_complete(ec.init_embedding())
+    app.state.embedding_model = model
 
     model = ec.get_embedding_model(app)
     assert model is None
@@ -165,6 +171,7 @@ def test_get_embedding_model_returns_none_when_failed(monkeypatch):
 def test_memory_logging(monkeypatch, caplog):
     """Verify memory footprint is logged when psutil is available."""
     import sys
+
     import config.embedding_config as ec
 
     class FakeMemInfo:
@@ -207,9 +214,12 @@ def test_memory_logging(monkeypatch, caplog):
     original_info = ec.logger.info
     monkeypatch.setattr(ec.logger, "info", fake_info)
 
-    asyncio.get_event_loop().run_until_complete(ec.init_embedding(app))
+    model = asyncio.get_event_loop().run_until_complete(ec.init_embedding())
+    app.state.embedding_model = model
 
     joined = "\n".join(captured).lower()
     assert ("ram" in joined) or (
+        "mb" in joined
+    ), f"Expected memory info to be logged, got: {joined}"
         "mb" in joined
     ), f"Expected memory info to be logged, got: {joined}"

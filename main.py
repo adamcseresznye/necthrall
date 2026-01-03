@@ -25,6 +25,8 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
+from config.config import get_settings
+
 # Global concurrency control
 MAX_CONCURRENT_SEARCHES = 2
 search_semaphore = asyncio.Semaphore(MAX_CONCURRENT_SEARCHES)
@@ -204,7 +206,7 @@ class QueryRequest(BaseModel):
 
 
 @app.post("/query")
-@limiter.limit("5/hour")
+@limiter.limit(f"{get_settings().RATE_LIMIT_QUERIES_PER_HOUR}/hour")
 async def query_endpoint(query_request: QueryRequest, request: Request):
     """Process a research query."""
     if not hasattr(app.state, "query_service"):
@@ -310,4 +312,4 @@ ui.run_with(
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("main:app", host="0.0.0.0", port=7860, log_level="info", reload=False)
+    uvicorn.run("main:app", host="0.0.0.0", port=7860, log_level="info", reload=True)

@@ -3,6 +3,7 @@
 import asyncio
 import datetime
 import time
+from collections import defaultdict
 from pathlib import Path
 
 import httpx
@@ -20,6 +21,38 @@ from ui.components import (
 )
 from ui.constants import KOFI_WIDGET, POSTHOG_SCRIPT
 from ui.policies import PRIVACY_POLICY, TERMS_OF_SERVICE
+
+# Global store: IP -> List of timestamps
+_rate_limit_store = defaultdict(list)
+
+
+def is_rate_limited(
+    ip_address: str, limit: int = None, window_seconds: int = None
+) -> bool:
+    """
+    Checks if an IP has exceeded the rate limit.
+    - Cleans up old timestamps outside the window.
+    - Returns True if limited, False if allowed.
+    - Adds current timestamp if allowed.
+    """
+    settings = get_settings()
+    if limit is None:
+        limit = settings.RATE_LIMIT_QUERIES_PER_HOUR
+    if window_seconds is None:
+        window_seconds = settings.RATE_LIMIT_WINDOW_SECONDS
+
+    now = time.time()
+    # Filter out timestamps older than the window
+    _rate_limit_store[ip_address] = [
+        t for t in _rate_limit_store[ip_address] if now - t < window_seconds
+    ]
+
+    if len(_rate_limit_store[ip_address]) >= limit:
+        return True
+
+    _rate_limit_store[ip_address].append(now)
+    return False
+
 
 # Path to logo directory
 LOGO_DIR = (
@@ -232,6 +265,14 @@ def init_ui(fastapi_app):
                 return True
 
         async def handle_search():
+            # Server-Side IP Rate Limit Check
+            client_ip = context.client.ip
+            if is_rate_limited(client_ip):
+                ui.notify(
+                    "Rate limit exceeded. Please try again later.", type="negative"
+                )
+                return
+
             # Client Spam Check
             if state["is_searching"]:
                 ui.notify("Search in progress", type="warning")

@@ -17,7 +17,7 @@ def test_state_minimal_init():
     assert isinstance(s.timestamp, datetime)
     # Optional fields default to None or empty list for errors
     assert s.optimized_query is None
-    assert s.papers is None
+    assert s.papers == []
     assert s.errors == []
 
 
@@ -28,14 +28,20 @@ def test_progressive_updates():
     assert s.optimized_query == "q optimized"
 
     # simulate retrieval
-    papers = [{"id": "p1", "title": "Paper 1"}]
+    papers = [{"paperId": "p1", "title": "Paper 1"}]
     s.update_fields(papers=papers)
-    assert s.papers == papers
+    assert len(s.papers) == 1
+    # pydantic converts dicts to `Paper` models; verify fields preserved
+    assert s.papers[0].paperId == "p1"
+    assert s.papers[0].title == "Paper 1"
 
     # ranking
-    ranked = [{"id": "p1", "score": 0.9}]
+    ranked = [{"paperId": "p1", "title": "Paper 1", "score": 0.9}]
     s.update_fields(ranked_papers=ranked)
-    assert s.ranked_papers == ranked
+    assert len(s.ranked_papers) == 1
+    rp = s.ranked_papers[0].model_dump()
+    assert rp.get("paperId") == "p1"
+    assert rp.get("score") == 0.9
 
 
 @pytest.mark.unit
@@ -81,5 +87,5 @@ def test_synthesis_fields_assignment():
     assert s.citations == [0, 2, 5]
 
     # Verify other existing fields remain intact
-    assert s.finalists is None
-    assert s.passages is None
+    assert s.finalists == []
+    assert s.passages == []

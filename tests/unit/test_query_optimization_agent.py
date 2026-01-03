@@ -14,6 +14,7 @@ async def test_generate_dual_queries_valid_query():
     query = "fasting risks"
 
     expected_output = {
+        "intent_type": "general",
         "final_rephrase": "cardiovascular and metabolic risks associated with intermittent fasting protocols",
         "primary": "intermittent fasting cardiovascular risks adverse effects",
         "broad": "fasting protocols health outcomes safety cardiovascular metabolic",
@@ -98,7 +99,13 @@ async def test_generate_dual_queries_empty_query():
 
         result = await agent.generate_dual_queries(query)
 
-        expected = {"final_rephrase": "", "primary": "", "broad": "", "alternative": ""}
+        expected = {
+            "intent_type": "general",
+            "final_rephrase": "",
+            "primary": "",
+            "broad": "",
+            "alternative": "",
+        }
         assert result == expected
         mock_generate.assert_called_once()
         mock_generate.assert_called_once()

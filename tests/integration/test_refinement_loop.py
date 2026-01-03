@@ -15,12 +15,13 @@ Run these tests with:
 
 from __future__ import annotations
 
-import pytest
+from typing import Any, Dict, List
 from unittest.mock import AsyncMock, MagicMock, patch
-from typing import Dict, List, Any
 
-from services.query_service import QueryService, PipelineResult
+import pytest
 
+from config.config import get_settings
+from services.query_service import PipelineResult, QueryService
 
 # ============================================================================
 # Fixtures
@@ -128,7 +129,7 @@ def mock_ranker(high_quality_papers):
 @pytest.fixture
 def query_service(mock_optimizer, mock_client, mock_ranker):
     """Create a QueryService instance with mocked agents."""
-    service = QueryService()
+    service = QueryService(get_settings(), None)
 
     # Inject mocks directly into discovery service
     service.discovery_service._optimizer = mock_optimizer
@@ -165,7 +166,7 @@ async def test_refinement_triggers_on_quality_gate_failure(
         4. refinement_count should be 1
     """
     # Create service with no embedding model
-    service = QueryService(embedding_model=None)
+    service = QueryService(get_settings(), None)
 
     # Mock the optimizer
     service.discovery_service._optimizer = mock_optimizer
@@ -251,7 +252,7 @@ async def test_no_refinement_when_first_attempt_succeeds(
         2. No refinement should trigger
         3. refinement_count should be 0
     """
-    service = QueryService(embedding_model=None)
+    service = QueryService(get_settings(), None)
     service.discovery_service._optimizer = mock_optimizer
 
     mock_client = AsyncMock()
@@ -298,7 +299,7 @@ async def test_pipeline_returns_failure_after_both_attempts_fail(
         4. Pipeline should still return success=True but with empty finalists
         5. refinement_count should be 1
     """
-    service = QueryService(embedding_model=None)
+    service = QueryService(get_settings(), None)
     service.discovery_service._optimizer = mock_optimizer
 
     # Mock client to always return low-quality papers
@@ -344,7 +345,7 @@ async def test_max_one_refinement_attempt(mock_optimizer, low_quality_papers):
         2. One refinement attempt is made
         3. No further refinements even if second attempt fails
     """
-    service = QueryService(embedding_model=None)
+    service = QueryService(get_settings(), None)
     service.discovery_service._optimizer = mock_optimizer
 
     call_count = 0
@@ -393,7 +394,7 @@ async def test_refinement_uses_broad_query(
 
     Verify the queries passed to the second search include the broad query.
     """
-    service = QueryService(embedding_model=None)
+    service = QueryService(get_settings(), None)
     service.discovery_service._optimizer = mock_optimizer
 
     captured_queries = []
@@ -487,7 +488,7 @@ async def test_timing_breakdown_tracks_refinement_separately(
     mock_optimizer, low_quality_papers, high_quality_papers
 ):
     """Test that timing breakdown separately tracks initial and refinement stages."""
-    service = QueryService(embedding_model=None)
+    service = QueryService(get_settings(), None)
     service.discovery_service._optimizer = mock_optimizer
 
     call_count = 0
@@ -552,4 +553,5 @@ async def test_timing_breakdown_tracks_refinement_separately(
     assert timing["semantic_scholar_search"] >= 0
     assert timing["semantic_scholar_search_refinement"] >= 0
     assert timing["quality_gate"] >= 0
+    assert timing["quality_gate_refinement"] >= 0
     assert timing["quality_gate_refinement"] >= 0

@@ -31,17 +31,18 @@ Run these tests with:
 
 from __future__ import annotations
 
-import pytest
 import time
+from typing import Any, Dict, List
 from unittest.mock import AsyncMock, MagicMock, patch
-from typing import List, Dict, Any
+
+import pytest
 
 # Import llama_index types for fixtures
 from llama_index.core.schema import NodeWithScore, TextNode
 
-from services.query_service import QueryService, PipelineResult
+from config.config import get_settings
 from models.state import State
-
+from services.query_service import PipelineResult, QueryService
 
 # ============================================================================
 # Fixtures
@@ -337,7 +338,7 @@ async def test_full_pipeline_with_mocked_stages(
         - Structure: all result fields properly populated
     """
     # Arrange
-    service = QueryService(embedding_model=mock_embedding_model)
+    service = QueryService(get_settings(), mock_embedding_model)
 
     with (
         patch.object(service.discovery_service, "_get_optimizer") as mock_optimizer,
@@ -477,7 +478,7 @@ async def test_pipeline_with_no_finalists(mock_embedding_model):
         - Later stages are not executed (no timing breakdown for them)
     """
     # Arrange
-    service = QueryService(embedding_model=mock_embedding_model)
+    service = QueryService(get_settings(), mock_embedding_model)
 
     with (
         patch.object(service.discovery_service, "_get_optimizer") as mock_optimizer,
@@ -542,7 +543,7 @@ async def test_pipeline_with_pdf_acquisition_failure(
         - No crashes when acquisition returns empty
     """
     # Arrange
-    service = QueryService(embedding_model=mock_embedding_model)
+    service = QueryService(get_settings(), mock_embedding_model)
 
     with (
         patch.object(service.discovery_service, "_get_optimizer") as mock_optimizer,
@@ -615,7 +616,7 @@ async def test_pipeline_with_no_chunks_generated(
         - Both acquisition and processing timing are recorded
     """
     # Arrange
-    service = QueryService(embedding_model=mock_embedding_model)
+    service = QueryService(get_settings(), mock_embedding_model)
 
     with (
         patch.object(service.discovery_service, "_get_optimizer") as mock_optimizer,
@@ -706,7 +707,7 @@ async def test_pipeline_performance(
         - Test itself completes in < 30 seconds
     """
     # Arrange
-    service = QueryService(embedding_model=mock_embedding_model)
+    service = QueryService(get_settings(), mock_embedding_model)
 
     with (
         patch.object(service.discovery_service, "_get_optimizer") as mock_optimizer,
@@ -825,7 +826,7 @@ async def test_pipeline_without_embedding_model(mock_finalists):
         - No later stage timing entries
     """
     # Arrange - No embedding model
-    service = QueryService(embedding_model=None)
+    service = QueryService(get_settings(), None)
 
     with (
         patch.object(service.discovery_service, "_get_optimizer") as mock_optimizer,
@@ -929,7 +930,7 @@ The intermittent fasting group showed significant reductions in blood pressure
     partial_retrieval = mock_retrieval_results[:8]
     partial_reranked = mock_reranked_results[:8]
 
-    service = QueryService(embedding_model=mock_embedding_model)
+    service = QueryService(get_settings(), mock_embedding_model)
 
     with (
         patch.object(service.discovery_service, "_get_optimizer") as mock_optimizer,
@@ -1043,7 +1044,7 @@ async def test_pipeline_result_structure(
         - No unexpected None values where data expected
     """
     # Arrange
-    service = QueryService(embedding_model=mock_embedding_model)
+    service = QueryService(get_settings(), mock_embedding_model)
 
     with (
         patch.object(service.discovery_service, "_get_optimizer") as mock_optimizer,

@@ -1,8 +1,9 @@
-import pytest
+import asyncio
 import json
 import os
 import sys
-import asyncio
+
+import pytest
 
 # python -m tests.test_necthrall_real
 # --- WINDOWS DLL FIX START ---
@@ -26,14 +27,17 @@ try:
 except ImportError:
     pass
 
-from deepeval.metrics import FaithfulnessMetric, AnswerRelevancyMetric
-from deepeval.test_case import LLMTestCase
-from deepeval import assert_test
-from services.query_service import QueryService
-from tests.eval_config import LLMJudge
-from tests.citation_metrics import CitationValidityMetric, CitationAccuracyMetric
 from unittest.mock import patch
+
+from deepeval import assert_test
+from deepeval.metrics import AnswerRelevancyMetric, FaithfulnessMetric
+from deepeval.test_case import LLMTestCase
+
 import agents.quality_gate
+from config.config import get_settings
+from services.query_service import QueryService
+from tests.citation_metrics import CitationAccuracyMetric, CitationValidityMetric
+from tests.eval_config import LLMJudge
 
 
 # Monkey-patch quality gate thresholds for testing
@@ -83,7 +87,7 @@ def llm_judge():
 @pytest.fixture(scope="module")
 def app_service():
     # Initialize the service (embedding model loads lazily)
-    return QueryService()
+    return QueryService(get_settings(), None)
 
 
 @pytest.mark.asyncio
@@ -173,7 +177,7 @@ if __name__ == "__main__":
 
             embedding_model = initialize_embedding_model()
 
-            service = QueryService(embedding_model=embedding_model)
+            service = QueryService(get_settings(), embedding_model)
 
             # Load data
             data = load_dataset()
@@ -206,6 +210,9 @@ if __name__ == "__main__":
             print(f"Manual test run failed: {e}")
             import traceback
 
+            traceback.print_exc()
+
+    asyncio.run(run_manual_test())
             traceback.print_exc()
 
     asyncio.run(run_manual_test())
