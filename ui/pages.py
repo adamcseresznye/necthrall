@@ -132,20 +132,23 @@ def init_ui(fastapi_app):
         # =====================================================================
         with (
             ui.dialog() as best_results_dialog,
-            ui.card().classes("q-pa-md w-full max-w-lg"),
+            ui.card().classes("w-full max-w-sm md:max-w-lg q-pa-lg"),
         ):
-            with ui.row().classes("w-full items-center justify-between"):
-                ui.label("How to Get the Best Results").classes("text-xl font-bold")
+            with ui.row().classes(
+                "w-full items-center justify-between mb-3 gap-2 flex-nowrap"
+            ):
+                ui.label("How to get the best results").classes(
+                    "text-lg md:text-xl font-bold leading-tight"
+                )
                 ui.button(icon="close", on_click=best_results_dialog.close).props(
                     "flat round dense"
                 )
 
-            with ui.column().classes("gap-4 mt-4"):
+            with ui.scroll_area().classes("w-full pr-2").style("max-height:70vh"):
                 ui.markdown(
-                    """
-Necthrall understands natural scientific language. You don't need keywords, just clear intent.
+                    """Necthrall understands natural scientific language. You don't need keywords, just clear intent.
 
-- **Find Specific Papers:** Mention the author, year, or acronym directly (e.g., "Results of Sutton 2020" or "PRESERVE-1 trial outcomes").
+- **Find Specific Papers:** Mention the author, year, or acronym directly (e.g., "Results of [Author] [Year]" or "[Name] trial outcomes").
 
 - **Compare Topics:** Don't be afraid to ask for comparisons. Necthrall can research two topics at once (e.g., "Efficacy of mRNA vs. viral vector vaccines").
 
@@ -157,7 +160,9 @@ Necthrall understands natural scientific language. You don't need keywords, just
 
 **If you get "Insufficient Evidence":** This usually means your query was too specific. Try removing strict constraints (like the year) to let the system find the broader scientific consensus on the topic instead.
                 """
-                ).classes("text-slate-700")
+                ).classes(
+                    "text-slate-700 text-sm leading-relaxed break-words q-mt-none q-pt-none"
+                ).style("margin-top:0;margin-bottom:0;")
 
         # =====================================================================
         # DIALOG: PRIVACY POLICY
@@ -501,16 +506,16 @@ Necthrall understands natural scientific language. You don't need keywords, just
         # HEADER
         # =====================================================================
         with ui.row().classes(
-            "header-container items-center justify-between lg:justify-center w-full px-4 bg-white shadow-sm relative"
+            "header-container items-center justify-between w-full px-4 py-3 bg-white shadow-sm"
         ):
             # Logo and brand
             with ui.row().classes("items-center gap-2"):
                 ui.image(LOGO_DIR).classes(
-                    "w-12 h-12 md:w-20 md:h-20 object-contain"
+                    "w-10 h-10 md:w-14 md:h-14 object-contain"
                 ).props("no-spinner")
 
                 ui.label("Necthrall").classes(
-                    "text-2xl md:text-4xl font-bold text-slate-800 leading-none pb-1 md:pb-2 cursor-pointer"
+                    "text-lg md:text-2xl font-bold text-slate-800 leading-tight cursor-pointer"
                 ).on(
                     "click",
                     lambda e=None: ui.run_javascript(
@@ -519,15 +524,13 @@ Necthrall understands natural scientific language. You don't need keywords, just
                 )
 
             # About and Tips buttons
-            with ui.row().classes(
-                "gap-2 lg:absolute lg:right-8 lg:top-1/2 lg:-translate-y-1/2"
-            ):
-                ui.button("About", on_click=about_dialog.open).props("flat").classes(
-                    "text-slate-600 font-semibold"
-                )
+            with ui.row().classes("gap-1 md:gap-2 items-center"):
+                ui.button("About", on_click=about_dialog.open).props(
+                    "flat dense"
+                ).classes("text-slate-600 font-semibold text-xs md:text-sm")
                 ui.button("Tips", on_click=best_results_dialog.open).props(
-                    "flat"
-                ).classes("text-slate-600 font-semibold")
+                    "flat dense"
+                ).classes("text-slate-600 font-semibold text-xs md:text-sm")
 
         # =====================================================================
         # MAIN CONTENT
