@@ -128,6 +128,38 @@ def init_ui(fastapi_app):
                     ).classes("text-sm md:text-base break-words flex-1")
 
         # =====================================================================
+        # DIALOG: HOW TO GET THE BEST RESULTS
+        # =====================================================================
+        with (
+            ui.dialog() as best_results_dialog,
+            ui.card().classes("q-pa-md w-full max-w-lg"),
+        ):
+            with ui.row().classes("w-full items-center justify-between"):
+                ui.label("How to Get the Best Results").classes("text-xl font-bold")
+                ui.button(icon="close", on_click=best_results_dialog.close).props(
+                    "flat round dense"
+                )
+
+            with ui.column().classes("gap-4 mt-4"):
+                ui.markdown(
+                    """
+Necthrall understands natural scientific language. You don't need keywords, just clear intent.
+
+- **Find Specific Papers:** Mention the author, year, or acronym directly (e.g., "Results of Sutton 2020" or "PRESERVE-1 trial outcomes").
+
+- **Compare Topics:** Don't be afraid to ask for comparisons. Necthrall can research two topics at once (e.g., "Efficacy of mRNA vs. viral vector vaccines").
+
+- **Get the Latest:** Use words like "latest", "current", or "2024" to filter for state-of-the-art updates.
+
+- **Find the Roots:** Ask for "history" or "seminal papers" to find the foundational theories that started a field.
+
+- **Just Ask Naturally:** Avoid Booleans like AND / OR. Ask full questions in plain English.
+
+**If you get "Insufficient Evidence":** This usually means your query was too specific. Try removing strict constraints (like the year) to let the system find the broader scientific consensus on the topic instead.
+                """
+                ).classes("text-slate-700")
+
+        # =====================================================================
         # DIALOG: PRIVACY POLICY
         # =====================================================================
         with (
@@ -486,12 +518,16 @@ def init_ui(fastapi_app):
                     ),
                 )
 
-            # About button
-
-            ui.button("About", on_click=about_dialog.open).props("flat").classes(
-                "text-slate-600 font-semibold "
-                "lg:absolute lg:right-8 lg:top-1/2 lg:-translate-y-1/2"
-            )
+            # About and Tips buttons
+            with ui.row().classes(
+                "gap-2 lg:absolute lg:right-8 lg:top-1/2 lg:-translate-y-1/2"
+            ):
+                ui.button("About", on_click=about_dialog.open).props("flat").classes(
+                    "text-slate-600 font-semibold"
+                )
+                ui.button("Tips", on_click=best_results_dialog.open).props(
+                    "flat"
+                ).classes("text-slate-600 font-semibold")
 
         # =====================================================================
         # MAIN CONTENT
