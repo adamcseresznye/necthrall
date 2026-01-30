@@ -146,7 +146,8 @@ def init_ui(fastapi_app):
 
             with ui.scroll_area().classes("w-full pr-2").style("max-height:70vh"):
                 ui.markdown(
-                    """Necthrall understands natural scientific language. You don't need keywords, just clear intent.
+                    """
+Necthrall understands natural scientific language. You don't need keywords, just clear intent.
 
 - **Find Specific Papers:** Mention the author, year, or acronym directly (e.g., "Results of [Author] [Year]" or "[Name] trial outcomes").
 
@@ -160,9 +161,7 @@ def init_ui(fastapi_app):
 
 **If you get "Insufficient Evidence":** This usually means your query was too specific. Try removing strict constraints (like the year) to let the system find the broader scientific consensus on the topic instead.
                 """
-                ).classes(
-                    "text-slate-700 text-sm leading-relaxed break-words q-mt-none q-pt-none"
-                ).style("margin-top:0;margin-bottom:0;")
+                ).classes("text-slate-700 text-sm leading-relaxed break-words")
 
         # =====================================================================
         # DIALOG: PRIVACY POLICY
@@ -506,9 +505,12 @@ def init_ui(fastapi_app):
         # HEADER
         # =====================================================================
         with ui.row().classes(
-            "header-container items-center justify-between w-full px-4 py-3 bg-white shadow-sm"
+            "header-container items-center justify-between w-full px-4 py-3 bg-white shadow-sm no-wrap"
         ):
-            # Logo and brand
+            # Left spacer for centering
+            ui.element("div").classes("flex-1")
+
+            # Logo and brand (centered)
             with ui.row().classes("items-center gap-2"):
                 ui.image(LOGO_DIR).classes(
                     "w-10 h-10 md:w-14 md:h-14 object-contain"
@@ -523,14 +525,20 @@ def init_ui(fastapi_app):
                     ),
                 )
 
-            # About and Tips buttons
-            with ui.row().classes("gap-1 md:gap-2 items-center"):
+            # About and Tips buttons (right side)
+            with ui.row().classes(
+                "gap-1 md:gap-2 items-center flex-1 justify-end no-wrap whitespace-nowrap"
+            ):
                 ui.button("About", on_click=about_dialog.open).props(
                     "flat dense"
-                ).classes("text-slate-600 font-semibold text-xs md:text-sm")
+                ).classes(
+                    "text-slate-600 font-semibold text-xs md:text-sm whitespace-nowrap"
+                )
                 ui.button("Tips", on_click=best_results_dialog.open).props(
                     "flat dense"
-                ).classes("text-slate-600 font-semibold text-xs md:text-sm")
+                ).classes(
+                    "text-slate-600 font-semibold text-xs md:text-sm whitespace-nowrap"
+                )
 
         # =====================================================================
         # MAIN CONTENT

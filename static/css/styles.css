@@ -402,3 +402,20 @@ a.source-link-btn:visited {
     color: var(--primary) !important;
     background: rgba(249, 115, 22, 0.05) !important;
 }
+
+/* Ko-fi widget - remove black border/background */
+iframe[src*="ko-fi.com"],
+iframe[src*="kofi"] {
+    border: none !important;
+    background: transparent !important;
+}
+
+/* Ko-fi floating button container */
+#kofi-widget-overlay {
+    background: transparent !important;
+}
+
+.floatingchat-container-wrap,
+.floatingchat-container-wrap-mobi {
+    background: transparent !important;
+}
