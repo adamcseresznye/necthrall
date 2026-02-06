@@ -3,7 +3,6 @@
 import asyncio
 import datetime
 import time
-from collections import defaultdict
 from pathlib import Path
 
 import httpx
@@ -22,36 +21,35 @@ from ui.components import (
 from ui.constants import KOFI_WIDGET, POSTHOG_SCRIPT
 from ui.policies import PRIVACY_POLICY, TERMS_OF_SERVICE
 
-# Global store: IP -> List of timestamps
-_rate_limit_store = defaultdict(list)
 
-
-def is_rate_limited(
-    ip_address: str, limit: int = None, window_seconds: int = None
-) -> bool:
+def check_and_update_limit() -> bool:
     """
-    Checks if an IP has exceeded the rate limit.
-    - Cleans up old timestamps outside the window.
-    - Returns True if limited, False if allowed.
-    - Adds current timestamp if allowed.
+    Check if user has exceeded rate limit using persistent user storage.
+
+    Returns:
+        True if search is allowed (under limit), False if rate limited.
     """
     settings = get_settings()
-    if limit is None:
-        limit = settings.RATE_LIMIT_QUERIES_PER_HOUR
-    if window_seconds is None:
-        window_seconds = settings.RATE_LIMIT_WINDOW_SECONDS
+    limit = settings.RATE_LIMIT_QUERIES_PER_HOUR
+    window_seconds = settings.RATE_LIMIT_WINDOW_SECONDS
 
     now = time.time()
+
+    # Retrieve search history from user storage
+    search_history = app.storage.user.get("search_history", [])
+
     # Filter out timestamps older than the window
-    _rate_limit_store[ip_address] = [
-        t for t in _rate_limit_store[ip_address] if now - t < window_seconds
-    ]
+    search_history = [t for t in search_history if now - t < window_seconds]
 
-    if len(_rate_limit_store[ip_address]) >= limit:
-        return True
+    # Check if limit exceeded
+    if len(search_history) >= limit:
+        return False
 
-    _rate_limit_store[ip_address].append(now)
-    return False
+    # Add current timestamp and save back
+    search_history.append(now)
+    app.storage.user["search_history"] = search_history
+
+    return True
 
 
 # Path to logo directory
@@ -301,9 +299,8 @@ Necthrall understands natural scientific language. You don't need keywords, just
                 return True
 
         async def handle_search():
-            # Server-Side IP Rate Limit Check
-            client_ip = context.client.ip
-            if is_rate_limited(client_ip):
+            # Server-Side User Rate Limit Check (using persistent storage)
+            if not check_and_update_limit():
                 ui.notify(
                     "Rate limit exceeded. Please try again later.", type="negative"
                 )

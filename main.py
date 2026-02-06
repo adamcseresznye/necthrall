@@ -8,24 +8,18 @@ import os
 import sys
 from contextlib import asynccontextmanager
 
-from config import _threading
+from config.config import get_settings
 
 # Disable tokenizers parallelism to avoid warnings
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 from datetime import datetime
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 from nicegui import ui
-from pydantic import BaseModel, Field
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
-
-from config.config import get_settings
 
 # Global concurrency control
 MAX_CONCURRENT_SEARCHES = 2
@@ -170,13 +164,8 @@ app = FastAPI(
     title="Necthrall API",
     description="AI-powered scientific research assistant",
     version="3.0.0",
-    lifespan=lifespan,  # Register the lifespan handler here
+    lifespan=lifespan,
 )
-
-# Initialize Rate Limiter
-limiter = Limiter(key_func=get_remote_address)
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -201,95 +190,6 @@ async def health_check():
     }
 
 
-class QueryRequest(BaseModel):
-    query: str = Field(..., min_length=1, max_length=500)
-
-
-@app.post("/query")
-@limiter.limit(f"{get_settings().RATE_LIMIT_QUERIES_PER_HOUR}/hour")
-async def query_endpoint(query_request: QueryRequest, request: Request):
-    """Process a research query."""
-    if not hasattr(app.state, "query_service"):
-        raise HTTPException(status_code=503, detail="Query service not initialized")
-
-    if search_semaphore.locked():
-        raise HTTPException(
-            status_code=503, detail="Server is busy. Please try again later."
-        )
-
-    async with search_semaphore:
-        try:
-            result = await app.state.query_service.process_query(query_request.query)
-
-            if not result.success:
-                # Handle specific error cases
-                if (
-                    result.error_message
-                    and "Semantic Scholar API is currently unavailable"
-                    in result.error_message
-                ):
-                    raise HTTPException(
-                        status_code=503,
-                        detail=result.error_message,
-                    )
-
-                # Include stage in error detail for debugging
-                error_detail = (
-                    result.error_message or "Pipeline failed without error message"
-                )
-                if result.error_stage:
-                    error_detail = f"{error_detail} (Stage: {result.error_stage})"
-
-                raise HTTPException(
-                    status_code=500,
-                    detail=error_detail,
-                )
-
-            # Format citations with IDs
-            citations = []
-            if result.passages:
-                for idx, p in enumerate(result.passages, 1):
-                    # Handle both dict and object access
-                    text = (
-                        p.get("text") if isinstance(p, dict) else getattr(p, "text", "")
-                    )
-                    metadata = (
-                        p.get("metadata")
-                        if isinstance(p, dict)
-                        else getattr(p, "metadata", {})
-                    ).copy()
-
-                    # Ensure score is in metadata if available
-                    score = (
-                        p.get("score")
-                        if isinstance(p, dict)
-                        else getattr(p, "score", None)
-                    )
-                    if score is not None:
-                        metadata["score"] = score
-
-                    citations.append({"id": idx, "text": text, "metadata": metadata})
-
-            return {
-                "query": query_request.query,
-                "answer": result.answer
-                or "No answer could be generated from the available sources.",
-                "citations": citations,
-                "finalists": result.finalists,
-                "execution_time": result.execution_time,
-                "timing_breakdown": result.timing_breakdown,
-                "optimized_queries": result.optimized_queries,
-                "quality_gate": result.quality_gate,
-            }
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.exception("Query processing failed")
-            raise HTTPException(
-                status_code=500, detail=f"An unexpected error occurred: {str(e)}"
-            )
-
-
 # =============================================================================
 # NiceGUI Frontend
 # =============================================================================
@@ -306,10 +206,11 @@ ui.run_with(
     favicon="logo/favicon.png",
     dark=False,
     reconnect_timeout=30.0,
+    storage_secret=get_settings().NICEGUI_STORAGE_SECRET,
 )
 
 
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("main:app", host="0.0.0.0", port=7860, log_level="info", reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=7860, log_level="info", reload=False)

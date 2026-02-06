@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     SYNTHESIS_MODEL: str = "mistral/mistral-large-2512"
     SYNTHESIS_FALLBACK: str = "cerebras/llama-3.3-70b"
 
+    NICEGUI_STORAGE_SECRET: str
+
     # Tuning
     RAG_RETRIEVAL_TOP_K: int = 50
     RAG_RERANK_TOP_K: int = 12

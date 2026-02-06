@@ -29,19 +29,7 @@ from agents.query_optimization_agent import QueryOptimizationAgent
 from config.config import Settings
 from models.state import Paper, Passage
 from services.discovery_service import DiscoveryService
-from services.exceptions import (
-    AcquisitionError,
-    ProcessingError,
-    QualityGateError,
-    QueryOptimizationError,
-    QueryServiceError,
-    RankingError,
-    RerankingError,
-    RetrievalError,
-    SemanticScholarError,
-    SynthesisError,
-    VerificationError,
-)
+from services.exceptions import QueryServiceError
 from services.ingestion_service import IngestionService
 from services.rag_service import RAGService
 
