@@ -8,6 +8,7 @@ from llama_index.core.node_parser import SentenceSplitter
 from llama_index.core.schema import Document
 from loguru import logger
 
+from config.config import get_settings
 from models.state import State
 from utils.embedding_utils import batched_embed
 
@@ -150,8 +151,13 @@ class ProcessingAgent:
             logger.error(msg)
             state.append_error(msg)
 
-        # Embedding Logic (unchanged)
-        if embedding_model is not None and all_chunks:
+        # Embedding Logic
+        # Skip entirely in BM25-only mode — BM25Retriever never reads node.metadata["embedding"]
+        _bm25_only = get_settings().RAG_RETRIEVAL_MODE == "bm25_only"
+        if _bm25_only:
+            logger.info("BM25-only mode: skipping chunk embedding generation")
+
+        if not _bm25_only and embedding_model is not None and all_chunks:
             texts: List[str] = []
             for node in all_chunks:
                 if hasattr(node, "get_text"):

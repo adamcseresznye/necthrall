@@ -20,6 +20,7 @@ from services.exceptions import RetrievalError, SynthesisError, VerificationErro
 
 if TYPE_CHECKING:
     from agents.synthesis_agent import SynthesisAgent
+    from retrieval.bm25_retriever import BM25Retriever
     from retrieval.llamaindex_retriever import LlamaIndexRetriever
     from utils.citation_verifier import CitationVerifier
 
@@ -50,13 +51,19 @@ class RAGService:
         # Initialize components immediately
         # Note: We keep imports inside __init__ to avoid circular deps and maintain safe DLL import order
         from agents.synthesis_agent import SynthesisAgent
-        from retrieval.llamaindex_retriever import LlamaIndexRetriever
         from utils.citation_verifier import CitationVerifier
 
-        self.retriever = LlamaIndexRetriever(
-            embedding_model=embedding_model,
-            top_k=settings.RAG_RETRIEVAL_TOP_K,
-        )
+        if settings.RAG_RETRIEVAL_MODE == "bm25_only":
+            from retrieval.bm25_retriever import BM25Retriever
+
+            self.retriever = BM25Retriever(top_k=settings.RAG_RETRIEVAL_TOP_K)
+        else:
+            from retrieval.llamaindex_retriever import LlamaIndexRetriever
+
+            self.retriever = LlamaIndexRetriever(
+                embedding_model=embedding_model,
+                top_k=settings.RAG_RETRIEVAL_TOP_K,
+            )
 
         self.synthesis_agent = SynthesisAgent(settings=settings)
         self.verifier = CitationVerifier()
@@ -133,7 +140,10 @@ class RAGService:
                 timing_breakdown=timing_breakdown,
             )
 
-        if self.embedding_model is None:
+        if (
+            self.embedding_model is None
+            and self.settings.RAG_RETRIEVAL_MODE != "bm25_only"
+        ):
             logger.warning("⚠️ Embedding model not available - skipping RAG stages.")
             return RAGResult(
                 passages=[],
@@ -143,8 +153,11 @@ class RAGService:
             )
 
         # Stage 7: Hybrid Retrieval
+        mode = self.settings.RAG_RETRIEVAL_MODE
+        stage7_label = "BM25 Retrieval" if mode == "bm25_only" else "Hybrid Retrieval"
         logger.info(
-            "🔍 Stage 7: Hybrid Retrieval - indexing {} chunks",
+            "🔍 Stage 7: {} - indexing {} chunks",
+            stage7_label,
             len(chunks),
         )
         stage_start = time.perf_counter()

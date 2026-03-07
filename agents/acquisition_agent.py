@@ -62,7 +62,7 @@ class AcquisitionAgent:
             state.append_error("No finalists available for acquisition")
             return state
 
-        TARGET_PDF_COUNT = 3
+        TARGET_PDF_COUNT = 5
         acquired_pdfs = 0
         passages_map: Dict[str, Passage] = {}
 
@@ -103,10 +103,10 @@ class AcquisitionAgent:
                     )
 
             # 2. Concurrent PDF acquisition for top candidates
-            # We try the top 9 candidates to get our target of 3 PDFs
+            # We try the top 12 candidates to get our target of 5 PDFs
             pdf_candidates = [
                 (idx, p) for idx, p in enumerate(finalists) if self._has_pdf_url(p)
-            ][:9]
+            ][:12]
 
             if pdf_candidates:
                 logger.info(

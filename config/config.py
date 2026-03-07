@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     # Tuning
     RAG_RETRIEVAL_TOP_K: int = 50
     RAG_RERANK_TOP_K: int = 12
+    # Retrieval mode: "bm25_only" skips embeddings for fast retrieval;
+    # "hybrid" uses FAISS + BM25 + RRF (requires embedding model).
+    RAG_RETRIEVAL_MODE: str = "bm25_only"
     TIMEOUT: int = 30
 
     # Rate Limiting

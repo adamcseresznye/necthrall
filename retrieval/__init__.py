@@ -2,9 +2,11 @@
 
 This module provides:
 - LlamaIndexRetriever: Hybrid search combining FAISS + BM25 with RRF fusion
+- BM25Retriever: BM25-only retrieval (no embedding model required)
 - CrossEncoderReranker: Re-ranking with cross-encoder for improved relevance
 """
 
+from retrieval.bm25_retriever import BM25Retriever, SimpleNode, SimpleNodeWithScore
 from retrieval.llamaindex_retriever import LlamaIndexRetriever
 
 # Lazy import for CrossEncoderReranker to avoid torch DLL issues on Windows
@@ -18,4 +20,10 @@ def get_reranker():
     return CrossEncoderReranker
 
 
-__all__ = ["LlamaIndexRetriever", "get_reranker"]
+__all__ = [
+    "LlamaIndexRetriever",
+    "BM25Retriever",
+    "SimpleNode",
+    "SimpleNodeWithScore",
+    "get_reranker",
+]
