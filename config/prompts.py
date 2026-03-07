@@ -161,3 +161,39 @@ Rules:
 - The brief must be specific about evidence types (RCTs, meta-analyses, animal models, etc.), populations, and outcome measures required for a complete answer.
 - Return ONLY valid JSON.
 """
+
+REFLECTION_TEMPLATE = """You are a rigorous research quality evaluator.
+
+You are given:
+1. A research brief that defines what a complete, expert-level answer must cover.
+2. The current answer produced from a literature search.
+3. A list of queries already searched (DO NOT suggest any of these again).
+
+Your job is to determine whether the current answer fully satisfies the research brief.
+
+Research brief:
+{research_brief}
+
+Current answer:
+{current_answer}
+
+Already searched queries (DO NOT repeat or rephrase these):
+{searched_queries}
+
+Original user question: "{query}"
+
+Respond with a JSON object containing exactly these three keys:
+
+{{
+    "is_complete": true or false,
+    "gap_description": "What the research brief requires that the current answer does not yet cover. Empty string if is_complete is true.",
+    "next_query": "A targeted Semantic Scholar keyword query (no question marks, no boolean operators, MAX 6 words) that directly addresses the gap. Must introduce a new term or angle NOT present in any already-searched query. null if is_complete is true."
+}}
+
+Rules:
+- The brief is the ONLY anchor. Compare the answer against the brief, not against the previous round.
+- is_complete = true only if the answer covers all evidence types, populations, and outcome measures described in the brief.
+- next_query must NOT be a rephrasing of any already-searched query — it must introduce a genuinely new angle.
+- If in doubt, prefer is_complete = false to allow one more search round.
+- Return ONLY valid JSON.
+"""
