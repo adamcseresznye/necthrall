@@ -268,11 +268,11 @@ async def test_acquisition_parallel_10_with_2_failures(monkeypatch):
     new_state = await agent.process(state)
     elapsed = time.monotonic() - start
 
-    # successful should be 5 PDFs (target limit)
+    # successful should be 3 PDFs (target limit after Phase 1)
     passages = new_state.passages or []
-    assert len(passages) == 5
+    assert len(passages) == 3
     pdf_passages = [p for p in passages if p.metadata.get("text_source") == "pdf"]
-    assert len(pdf_passages) == 5
+    assert len(pdf_passages) == 3
     # requirement: return in under 4 seconds in real world; here ensure it's fast
     assert elapsed < 4.0
     assert elapsed < 4.0

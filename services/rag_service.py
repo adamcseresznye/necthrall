@@ -1,10 +1,9 @@
-"""RAG service for stages 7-10 of the pipeline.
+"""RAG service for stages 7-9 of the pipeline.
 
 Responsibilities:
 7. Hybrid Retrieval
-8. Cross-Encoder Reranking
-9. Synthesis
-10. Verification
+8. Synthesis
+9. Verification
 """
 
 import asyncio
@@ -17,17 +16,11 @@ from loguru import logger
 
 from config.config import Settings
 from models.state import Passage
-from services.exceptions import (
-    RerankingError,
-    RetrievalError,
-    SynthesisError,
-    VerificationError,
-)
+from services.exceptions import RetrievalError, SynthesisError, VerificationError
 
 if TYPE_CHECKING:
     from agents.synthesis_agent import SynthesisAgent
     from retrieval.llamaindex_retriever import LlamaIndexRetriever
-    from retrieval.reranker import CrossEncoderReranker
     from utils.citation_verifier import CitationVerifier
 
 
@@ -58,7 +51,6 @@ class RAGService:
         # Note: We keep imports inside __init__ to avoid circular deps and maintain safe DLL import order
         from agents.synthesis_agent import SynthesisAgent
         from retrieval.llamaindex_retriever import LlamaIndexRetriever
-        from retrieval.reranker import CrossEncoderReranker
         from utils.citation_verifier import CitationVerifier
 
         self.retriever = LlamaIndexRetriever(
@@ -66,17 +58,7 @@ class RAGService:
             top_k=settings.RAG_RETRIEVAL_TOP_K,
         )
 
-        try:
-            self.reranker = CrossEncoderReranker()
-        except (ImportError, OSError) as e:
-            logger.warning(
-                f"Could not import CrossEncoderReranker: {e}. Reranking will fail if attempted."
-            )
-            self.reranker = None
-
         self.synthesis_agent = SynthesisAgent(settings=settings)
-        self.verifier = CitationVerifier()
-
         self.verifier = CitationVerifier()
 
     def _select_diverse_top_k(
@@ -196,43 +178,14 @@ class RAGService:
                 timing_breakdown=timing_breakdown,
             )
 
-        # Stage 8: Cross-Encoder Reranking
         logger.info(
-            "⚖️ Stage 8: Cross-Encoder Reranking - reranking {} passages",
-            len(passages),
+            "Applying diversity filter: selecting top {} with max 3 per paper",
+            self.settings.RAG_RERANK_TOP_K,
         )
-        stage_start = time.perf_counter()
-        try:
-            if self.reranker:
-                # Rerank a larger pool (all retrieved) to allow for diversity filtering
-                reranked_passages = await asyncio.to_thread(
-                    self.reranker.rerank, query, passages, top_k=len(passages)
-                )
-
-                # Apply diversity filter
-                logger.info(
-                    "Applying diversity filter: selecting top {} with max 3 per paper",
-                    self.settings.RAG_RERANK_TOP_K,
-                )
-                passages = self._select_diverse_top_k(
-                    reranked_passages, k=self.settings.RAG_RERANK_TOP_K
-                )
-
-                timing_breakdown["reranking"] = time.perf_counter() - stage_start
-                logger.info(
-                    "✅ Reranking completed in {:.3f}s - selected top {} passages",
-                    timing_breakdown["reranking"],
-                    len(passages),
-                )
-            else:
-                logger.warning(
-                    f"⚠️ Reranker not available - skipping reranking and taking top {self.settings.RAG_RERANK_TOP_K}"
-                )
-                passages = passages[: self.settings.RAG_RERANK_TOP_K]
-                timing_breakdown["reranking"] = 0.0
-        except Exception as e:
-            logger.exception("Reranking failed")
-            raise RerankingError(f"Failed to rerank passages: {str(e)}") from e
+        passages = self._select_diverse_top_k(
+            passages, k=self.settings.RAG_RERANK_TOP_K
+        )
+        logger.info("✅ Selected {} passages after diversity filter", len(passages))
 
         # Convert to Pydantic models for result
         final_passages = []
