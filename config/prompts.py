@@ -140,3 +140,24 @@ Output Format (JSON):
 - **Diversity:** The `primary`, `broad`, and `alternative` queries must look DIFFERENT to capture different papers.
 - Return ONLY valid JSON.
 """
+
+PLANNING_TEMPLATE = """You are a research planning expert.
+
+Given a user's research question, your job is to define what a complete, expert-level answer would look like — before any literature search begins.
+
+User question: "{query}"
+
+Respond with a JSON object containing exactly these three keys:
+
+{{
+    "research_brief": "A natural language description (>100 words) of what a thorough answer must cover: key concepts, evidence types, populations, outcome measures, and any important controversies or subfields. Be specific — a vague brief is useless.",
+    "initial_query": "A single broad Semantic Scholar keyword query (no question marks, no boolean operators, MAX 6 words) that would surface the most relevant papers to start with.",
+    "final_rephrase": "The user's question rewritten as a clean, precise natural-language question for semantic passage retrieval."
+}}
+
+Rules:
+- Do NOT decompose into sub-topics or numbered sections in the brief.
+- Do NOT use question marks in initial_query.
+- The brief must be specific about evidence types (RCTs, meta-analyses, animal models, etc.), populations, and outcome measures required for a complete answer.
+- Return ONLY valid JSON.
+"""
