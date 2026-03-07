@@ -101,7 +101,9 @@ class ResearchService:
             # --- Discovery ---
             t0 = time.perf_counter()
             try:
-                discovery_result = await self.discovery.discover(query_to_search)
+                discovery_result = await self.discovery.discover(
+                    query_to_search, existing_paper_ids=seen_paper_ids
+                )
             except Exception as e:
                 logger.exception(
                     "ResearchService: discovery failed on round {}: {}", round_num, e
@@ -109,11 +111,10 @@ class ResearchService:
                 break
             timing[f"discovery_round_{round_num}"] = time.perf_counter() - t0
 
-            # Filter out already-seen papers (Phase 5 will push this into DiscoveryService)
+            # DiscoveryService already filtered seen papers via existing_paper_ids;
+            # just cap to the per-round PDF target.
             pdf_target = PDF_TARGETS.get(round_num, 1)
-            new_finalists = [
-                p for p in discovery_result.finalists if p.paperId not in seen_paper_ids
-            ][:pdf_target]
+            new_finalists = discovery_result.finalists[:pdf_target]
 
             if not new_finalists:
                 logger.warning(

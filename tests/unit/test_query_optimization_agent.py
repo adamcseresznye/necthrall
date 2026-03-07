@@ -109,3 +109,46 @@ async def test_generate_dual_queries_empty_query():
         assert result == expected
         mock_generate.assert_called_once()
         mock_generate.assert_called_once()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_generate_single_query_returns_keyword_string():
+    """generate_single_query should return a clean keyword string with no '?' and ≤15 words"""
+    agent = QueryOptimizationAgent()
+
+    with patch.object(agent, "_call_llm", new_callable=AsyncMock) as mock_call_llm:
+        mock_call_llm.return_value = "CRISPR-Cas9 mechanism genome editing"
+
+        result = await agent.generate_single_query(
+            "What are the mechanisms of CRISPR-Cas9?"
+        )
+
+        assert isinstance(result, str)
+        assert "?" not in result
+        assert len(result.split()) <= 15
+        mock_call_llm.assert_called_once()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_generate_single_query_fallback_on_llm_failure():
+    """generate_single_query should return the original query unchanged when LLM returns None"""
+    agent = QueryOptimizationAgent()
+    query = "What are the cognitive effects of sleep deprivation?"
+
+    with patch.object(agent, "_call_llm", new_callable=AsyncMock) as mock_call_llm:
+        mock_call_llm.return_value = None
+
+        result = await agent.generate_single_query(query)
+
+        assert result == query
+        mock_call_llm.assert_called_once()
+
+
+@pytest.mark.unit
+def test_single_query_fallback_direct():
+    """_single_query_fallback should return the query unchanged"""
+    agent = QueryOptimizationAgent()
+    q = "some query"
+    assert agent._single_query_fallback(q) == q

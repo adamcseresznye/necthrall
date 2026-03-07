@@ -77,6 +77,38 @@ class QueryOptimizationAgent:
             )
         return parsed
 
+    async def generate_single_query(self, query: str) -> str:
+        """Generate a single keyword-style Semantic Scholar search query.
+
+        Used by DiscoveryService when called from ResearchService,
+        where the query is already focused by PlanningAgent/ReflectionAgent.
+
+        Args:
+            query: Focused query string from PlanningAgent or ReflectionAgent.
+
+        Returns:
+            A single keyword-style search string. Falls back to input on failure.
+        """
+        prompt = (
+            f"Convert the following research question into a short, keyword-style "
+            f"Semantic Scholar search query (no question marks, 3-7 words). "
+            f"Return ONLY the query string, nothing else.\n\nQuestion: {query}"
+        )
+        response = await self._call_llm(prompt)
+        if response is None:
+            return self._single_query_fallback(query)
+        cleaned = response.strip().strip('"').strip("'")
+        if not cleaned or "?" in cleaned or len(cleaned.split()) > 15:
+            logger.warning("generate_single_query: bad LLM output, using fallback")
+            return self._single_query_fallback(query)
+        logger.info("generate_single_query: '{}' → '{}'", query[:60], cleaned)
+        return cleaned
+
+    def _single_query_fallback(self, query: str) -> str:
+        """Return original query as fallback for generate_single_query."""
+        logger.debug("_single_query_fallback called for: {}", query[:60])
+        return query
+
     async def _call_llm(self, prompt: str) -> Optional[str]:
         """Call the LLM and handle timeouts/failures."""
         try:

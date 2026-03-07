@@ -10,7 +10,7 @@ Responsibilities:
 import asyncio
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from loguru import logger
 
@@ -138,7 +138,10 @@ class DiscoveryService:
         return papers, quality_result
 
     async def discover(
-        self, query: str, optimized_data: Optional[Dict[str, Any]] = None
+        self,
+        query: str,
+        optimized_data: Optional[Dict[str, Any]] = None,
+        existing_paper_ids: Optional[Set[str]] = None,
     ) -> DiscoveryResult:
         """Execute the discovery phase (Stages 1-4).
 
@@ -162,10 +165,27 @@ class DiscoveryService:
             timing_breakdown["query_optimization"] = 0.0
         else:
             try:
-                optimized_queries = await self.optimizer.generate_dual_queries(query)
-                logger.info(
-                    "Optimized queries returned by optimizer: {}", optimized_queries
-                )
+                if existing_paper_ids is not None:
+                    # Called from ResearchService — query already focused, use single query path
+                    single_q = await self.optimizer.generate_single_query(query)
+                    optimized_queries = {
+                        "strategy": "expansion",
+                        "final_rephrase": query,
+                        "primary": single_q,
+                        "broad": single_q,
+                        "alternative": single_q,
+                        "intent_type": "general",
+                    }
+                    logger.info(
+                        "Single query optimization completed: '{}'", single_q[:100]
+                    )
+                else:
+                    optimized_queries = await self.optimizer.generate_dual_queries(
+                        query
+                    )
+                    logger.info(
+                        "Optimized queries returned by optimizer: {}", optimized_queries
+                    )
                 timing_breakdown["query_optimization"] = (
                     time.perf_counter() - stage_start
                 )
@@ -269,7 +289,7 @@ class DiscoveryService:
                         "Applying Stratified Ranking for {} sub-queries",
                         len(sub_queries),
                     )
-                    slots = 50 // len(sub_queries)
+                    slots = 25 // len(sub_queries)
                     finalists_set = set()
                     finalists = []
 
@@ -290,7 +310,7 @@ class DiscoveryService:
                         self.ranker.rank_papers,
                         paper_objects,
                         optimized_queries["final_rephrase"],
-                        50,  # top_k for Base+Bonus strategy
+                        25,  # top_k for Base+Bonus strategy
                         weights,
                     )
 
@@ -309,6 +329,14 @@ class DiscoveryService:
             timing_breakdown["composite_scoring"] = 0.0
             logger.info("Quality gate failed - skipping ranking stage")
 
+        if existing_paper_ids:
+            before_count = len(finalists)
+            finalists = [p for p in finalists if p.paperId not in existing_paper_ids]
+            logger.info(
+                "DiscoveryService: dedup filtered {} → {} finalists",
+                before_count,
+                len(finalists),
+            )
         return DiscoveryResult(
             optimized_queries=optimized_queries,
             quality_gate=quality_result,

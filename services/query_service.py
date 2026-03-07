@@ -21,7 +21,7 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from loguru import logger
 
@@ -29,9 +29,9 @@ from agents.query_optimization_agent import QueryOptimizationAgent
 from config.config import Settings
 from models.state import Paper, Passage
 from services.discovery_service import DiscoveryService
-from services.exceptions import QueryServiceError
 from services.ingestion_service import IngestionService
 from services.rag_service import RAGService
+from services.research_service import ResearchService
 
 
 @dataclass
@@ -89,6 +89,11 @@ class QueryService:
         self.discovery_service = DiscoveryService(settings)
         self.ingestion_service = IngestionService(embedding_model)
         self.rag_service = RAGService(embedding_model, settings)
+        self.research_service = ResearchService(
+            self.discovery_service,
+            self.ingestion_service,
+            self.rag_service,
+        )
 
     async def close(self):
         await self.discovery_service.close()
@@ -99,26 +104,24 @@ class QueryService:
         deep_mode: bool = True,
         progress_callback: Optional[Callable] = None,
     ) -> PipelineResult:
-        """Process a user query through the complete pipeline.
-
-        Stages:
-            1-4: Discovery (Optimization, Search, Quality Gate, Ranking)
-            5-6: Ingestion (Acquisition, Processing)
-            7-10: RAG (Retrieval, Reranking, Synthesis, Verification)
+        """Process a user query via the multi-round ResearchService loop.
 
         Args:
-            query: The user query string
-            deep_mode: Whether to perform deep PDF analysis (True) or fast abstract search (False)
-            progress_callback: Optional async callback to report progress
+            query: The user query string.
+            deep_mode: Reserved for future use; ResearchService always uses PDF ingestion.
+            progress_callback: Optional async callback to report progress.
 
         Returns:
-            PipelineResult with all processing results and metadata
-
-        Raises:
-            QueryServiceError: For pipeline-specific errors
+            PipelineResult with synthesized answer and timing metadata.
         """
         start_time = time.perf_counter()
-        timing_breakdown = {}
+
+        async def report_progress():
+            if progress_callback:
+                if asyncio.iscoroutinefunction(progress_callback):
+                    await progress_callback()
+                else:
+                    progress_callback()
 
         # Initialize result with defaults
         result = PipelineResult(
@@ -133,128 +136,37 @@ class QueryService:
             refinement_count=0,
         )
 
-        # Helper to safely await callback
-        async def report_progress():
-            if progress_callback:
-                if asyncio.iscoroutinefunction(progress_callback):
-                    await progress_callback()
-                else:
-                    progress_callback()
-
         try:
-            logger.info("Starting query pipeline for: {}", query[:100])
-            await report_progress()
-
-            # ======0: Planning (Optimization)
-            # =====================================================================
-            opt_start = time.perf_counter()
-            optimization_result = None
-            try:
-                optimization_result = (
-                    await self.optimization_agent.generate_dual_queries(query)
-                )
-            except Exception as e:
-                logger.error(
-                    "Optimization failed in QueryService, proceeding with fallback: {}",
-                    e,
-                )
-
-            opt_time = time.perf_counter() - opt_start
-
-            # =====================================================================
-            # Phase 1: Discovery (Stages 1-4)
-            # =====================================================================
-            discovery_result = await self.discovery_service.discover(
-                query, optimized_data=optimization_result
+            logger.info(
+                "QueryService: delegating to ResearchService for: {}", query[:100]
             )
-
-            # Update result and timing
-            result.optimized_queries = discovery_result.optimized_queries
-            result.quality_gate = discovery_result.quality_gate
-            result.finalists = discovery_result.finalists
-            result.refinement_count = discovery_result.refinement_count
-            timing_breakdown.update(discovery_result.timing_breakdown)
-
-            # Ensure our optimization time is preserved if we ran it
-            if optimization_result:
-                timing_breakdown["query_optimization"] = opt_time
-
-            # Check if we have finalists to process
-            if not discovery_result.finalists:
-                logger.info("ℹ️ No finalists to process")
-                result.execution_time = time.perf_counter() - start_time
-                result.timing_breakdown = timing_breakdown
-                result.success = True
-                return result
-
-            # =====================================================================
-            # Phase 2: Ingestion (Stages 5-6)
-            # =====================================================================
             await report_progress()
 
-            chunks = []
+            research_result = await self.research_service.research(query)
 
-            if deep_mode:
-                ingestion_result = await self.ingestion_service.ingest(
-                    discovery_result.finalists, query
-                )
-
-                # Update timing
-                timing_breakdown.update(ingestion_result.timing_breakdown)
-                chunks = ingestion_result.chunks
-            else:
-                chunks = await self.ingestion_service.ingest_abstracts(
-                    discovery_result.finalists
-                )
-
-            # Check if we have chunks to process
-            if not chunks:
-                logger.warning("⚠️ No chunks generated from ingestion (or fast mode)")
-                result.execution_time = time.perf_counter() - start_time
-                result.timing_breakdown = timing_breakdown
-                result.success = True
-                return result
-
-            # =====================================================================
-            # Phase 3: RAG (Stages 7-10)
-            # =====================================================================
-            await report_progress()
-
-            # Use final_rephrase for RAG if available, else original query
-            rag_query = discovery_result.optimized_queries.get("final_rephrase", query)
-
-            rag_result = await self.rag_service.answer(rag_query, chunks)
-
-            # Update result and timing
-            result.passages = rag_result.passages
-            result.answer = rag_result.answer
-            result.citation_verification = rag_result.citation_verification
-            timing_breakdown.update(rag_result.timing_breakdown)
-
-            # Finalize result
+            # Map ResearchResult → PipelineResult (PipelineResult shape is unchanged)
+            result.answer = research_result.answer
+            result.optimized_queries = {
+                "research_brief": research_result.research_brief,
+                "searched_queries": research_result.searched_queries,
+            }
+            result.timing_breakdown = research_result.timing_breakdown
+            result.refinement_count = research_result.rounds_completed
             result.execution_time = time.perf_counter() - start_time
-            result.timing_breakdown = timing_breakdown
-            result.success = True
+            result.success = research_result.answer is not None
 
             logger.info(
-                "✅ Pipeline completed successfully in {:.3f}s", result.execution_time
+                "QueryService: completed {} round(s) in {:.3f}s — answer={}",
+                research_result.rounds_completed,
+                result.execution_time,
+                "yes" if result.answer else "no",
             )
-            return result
-
-        except QueryServiceError as e:
-            logger.error("Pipeline failed at stage {}: {}", e.stage, e.message)
-            result.execution_time = time.perf_counter() - start_time
-            result.timing_breakdown = timing_breakdown
-            result.success = False
-            result.error_message = e.message
-            result.error_stage = e.stage
             return result
 
         except Exception as e:
-            logger.exception("Unexpected pipeline error")
+            logger.exception("QueryService: unexpected error in process_query")
             result.execution_time = time.perf_counter() - start_time
-            result.timing_breakdown = timing_breakdown
             result.success = False
             result.error_message = f"Unexpected error: {str(e)}"
-            result.error_stage = "unknown"
+            result.error_stage = "research_service"
             return result
