@@ -1,7 +1,7 @@
 """BM25-only retriever for fast, embedding-free passage retrieval.
 
-Uses rank_bm25.BM25Okapi (already a project dependency) with whitespace
-tokenisation – the same strategy used by LlamaIndexRetriever._bm25_search.
+Uses bm25s with whitespace tokenisation – the same strategy used by
+LlamaIndexRetriever._bm25_search.
 
 The two dataclasses (SimpleNode / SimpleNodeWithScore) mirror the
 llama_index NodeWithScore interface so that all downstream code in
@@ -14,8 +14,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, List
 
+import bm25s
 from loguru import logger
-from rank_bm25 import BM25Okapi
 
 # ---------------------------------------------------------------------------
 # Lightweight node wrappers (NodeWithScore-compatible)
@@ -115,28 +115,28 @@ class BM25Retriever:
 
         # ---- 2. Tokenise -----------------------------------------------
         tokenized_corpus = [t.lower().split() for t in texts]
-        tokenized_query = query.lower().split()
+        tokenized_query = [query.lower().split()]  # bm25s expects list of queries
 
         # ---- 3. BM25 scoring -------------------------------------------
-        bm25 = BM25Okapi(tokenized_corpus)
-        scores = bm25.get_scores(tokenized_query)
+        retriever = bm25s.BM25()
+        retriever.index(tokenized_corpus)
+        k = min(self.top_k, len(texts))
+        result_indices, result_scores = retriever.retrieve(tokenized_query, k=k)
 
         # ---- 4. Rank and return top-k ----------------------------------
-        # zip scores with original indices so we can look up text/metadata
-        indexed_scores = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)
+        # result_indices/scores shape: (1, k) — unwrap the single query dimension
+        top = list(zip(result_indices[0].tolist(), result_scores[0].tolist()))
 
         # If every score is zero (no term overlap) keep top-k by document
         # order so callers always receive *something* usable.
-        all_zero = all(s == 0.0 for _, s in indexed_scores)
+        all_zero = all(s == 0.0 for _, s in top)
         if all_zero:
             logger.debug(
                 "BM25Retriever: no term overlap for query '{}'; "
                 "returning top-k by document order",
                 query,
             )
-            indexed_scores = list(enumerate(scores))  # preserve original order
-
-        top = indexed_scores[: self.top_k]
+            top = [(i, 0.0) for i in range(k)]
 
         results: List[SimpleNodeWithScore] = []
         for idx, score in top:
