@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 from curl_cffi.requests import AsyncSession, RequestsError
 from loguru import logger
 
+from config.config import Settings, get_settings
 from models.state import Paper, Passage, State
 from utils.pdf_extractor import PdfExtractionError, extract_text_from_pdf_file
 
@@ -40,8 +41,11 @@ class AcquisitionAgent:
       PDFs fail the State will receive a critical error via `append_error()`.
     """
 
-    PER_PDF_TIMEOUT = 30.0
-    _CHUNK_SIZE = 32 * 1024
+    def __init__(self, settings: Settings | None = None) -> None:
+        s = settings or get_settings()
+        self._per_pdf_timeout: float = s.ACQUISITION_PER_PDF_TIMEOUT
+        self._chunk_size: int = s.ACQUISITION_CHUNK_SIZE
+        self._target_pdf_count: int = s.ACQUISITION_TARGET_PDF_COUNT
 
     async def process(self, state: State) -> State:
         """Process finalists with Base+Bonus strategy:
@@ -62,7 +66,6 @@ class AcquisitionAgent:
             state.append_error("No finalists available for acquisition")
             return state
 
-        TARGET_PDF_COUNT = 5
         acquired_pdfs = 0
         passages_map: Dict[str, Passage] = {}
 
@@ -70,7 +73,7 @@ class AcquisitionAgent:
         logger.info(
             "Starting Base+Bonus acquisition: {n} abstracts, target {t} PDFs",
             n=len(finalists),
-            t=TARGET_PDF_COUNT,
+            t=self._target_pdf_count,
         )
 
         start_all = time.monotonic()
@@ -118,7 +121,7 @@ class AcquisitionAgent:
                     try:
                         return await asyncio.wait_for(
                             self._process_single(paper, session),
-                            timeout=self.PER_PDF_TIMEOUT,
+                            timeout=self._per_pdf_timeout,
                         )
                     except (asyncio.TimeoutError, asyncio.CancelledError):
                         logger.warning(
@@ -148,12 +151,12 @@ class AcquisitionAgent:
                         logger.info(
                             "Upgrading to PDF ({a}/{t}): {title}",
                             a=acquired_pdfs,
-                            t=TARGET_PDF_COUNT,
+                            t=self._target_pdf_count,
                             title=paper_title,
                         )
 
                     # Stop early if we hit the target
-                    if acquired_pdfs >= TARGET_PDF_COUNT:
+                    if acquired_pdfs >= self._target_pdf_count:
                         break
 
                 # Cancel any remaining tasks to free resources
@@ -288,7 +291,7 @@ class AcquisitionAgent:
             raise RequestsError(f"HTTP {status}")
 
         with open(destination_path, "wb") as fh:
-            async for chunk in resp.aiter_content(chunk_size=self._CHUNK_SIZE):
+            async for chunk in resp.aiter_content(chunk_size=self._chunk_size):
                 if not chunk:
                     continue
                 fh.write(chunk)

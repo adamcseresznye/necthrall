@@ -14,9 +14,7 @@ from loguru import logger
 
 from agents.planning_agent import PlanningAgent, PlanResult
 from agents.reflection_agent import ReflectionAgent, ReflectionResult
-
-MAX_ROUNDS: int = 3
-PDF_TARGETS: dict[int, int] = {1: 3, 2: 2, 3: 1}  # papers to ingest per round
+from config.config import get_settings
 
 
 @dataclass
@@ -63,6 +61,7 @@ class ResearchService:
         self.rag = rag_service
         self._planning_agent = PlanningAgent()
         self._reflection_agent = ReflectionAgent()
+        self._settings = get_settings()
 
     async def research(self, query: str) -> ResearchResult:
         """Run the multi-round research loop for a user query.
@@ -96,8 +95,8 @@ class ResearchService:
         final_passages: List[Any] = []
         reflection: Optional[ReflectionResult] = None
 
-        for round_num in range(1, MAX_ROUNDS + 1):
-            logger.info("ResearchService: starting round {}/{}", round_num, MAX_ROUNDS)
+        for round_num in range(1, self._settings.RESEARCH_MAX_ROUNDS + 1):
+            logger.info("ResearchService: starting round {}/{}", round_num, self._settings.RESEARCH_MAX_ROUNDS)
 
             # Determine which query to search this round
             if round_num == 1:
@@ -129,7 +128,7 @@ class ResearchService:
 
             # DiscoveryService already filtered seen papers via existing_paper_ids;
             # just cap to the per-round PDF target.
-            pdf_target = PDF_TARGETS.get(round_num, 1)
+            pdf_target = self._settings.RESEARCH_PDF_TARGETS.get(round_num, 1)
             new_finalists = discovery_result.finalists[:pdf_target]
 
             if not new_finalists:
@@ -243,4 +242,4 @@ class ResearchService:
         )
 
 
-__all__ = ["ResearchService", "ResearchResult", "MAX_ROUNDS"]
+__all__ = ["ResearchService", "ResearchResult"]

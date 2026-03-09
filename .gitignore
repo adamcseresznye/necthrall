@@ -170,3 +170,4 @@ scripts/*.json
 
 # ONNX model cache (downloaded at runtime/build time)
 onnx_model_cache/
+.nicegui/

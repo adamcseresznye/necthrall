@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services.research_service import MAX_ROUNDS, ResearchService
+from services.research_service import ResearchService
 
 
 def _make_paper(paper_id: str):

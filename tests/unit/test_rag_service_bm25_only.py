@@ -31,12 +31,11 @@ class _FakeChunk:
 
 def _make_bm25_settings(
     retrieval_top_k: int = 10,
-    rerank_top_k: int = 3,
+    passages_top_k: int = 3,
 ) -> MagicMock:
     settings = MagicMock()
-    settings.RAG_RETRIEVAL_MODE = "bm25_only"
     settings.RAG_RETRIEVAL_TOP_K = retrieval_top_k
-    settings.RAG_RERANK_TOP_K = rerank_top_k
+    settings.RAG_PASSAGES_TOP_K = passages_top_k
     return settings
 
 

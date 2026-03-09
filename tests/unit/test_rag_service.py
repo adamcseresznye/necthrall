@@ -31,10 +31,10 @@ def _make_mock_node(paper_id: str = "paper_1", score: float = 0.9) -> MagicMock:
     return passage
 
 
-def _make_settings(retrieval_top_k: int = 50, rerank_top_k: int = 12) -> MagicMock:
+def _make_settings(retrieval_top_k: int = 50, passages_top_k: int = 12) -> MagicMock:
     settings = MagicMock()
     settings.RAG_RETRIEVAL_TOP_K = retrieval_top_k
-    settings.RAG_RERANK_TOP_K = rerank_top_k
+    settings.RAG_PASSAGES_TOP_K = passages_top_k
     return settings
 
 

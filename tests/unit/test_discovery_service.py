@@ -17,6 +17,9 @@ from services.discovery_service import DiscoveryResult, DiscoveryService
 def mock_settings():
     settings = MagicMock(spec=Settings)
     settings.SEMANTIC_SCHOLAR_API_KEY = "fake-key"
+    settings.DISCOVERY_DEFAULT_WEIGHTS = {"relevance": 0.60, "authority": 0.35, "recency": 0.05}
+    settings.DISCOVERY_NEWS_WEIGHTS = {"relevance": 0.50, "authority": 0.0, "recency": 0.50}
+    settings.DISCOVERY_FOUNDATIONAL_WEIGHTS = {"relevance": 0.40, "authority": 0.60, "recency": 0.0}
     return settings
 
 

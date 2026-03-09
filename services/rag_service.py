@@ -172,10 +172,10 @@ class RAGService:
 
         logger.info(
             "Applying diversity filter: selecting top {} with max 3 per paper",
-            self.settings.RAG_RERANK_TOP_K,
+            self.settings.RAG_PASSAGES_TOP_K,
         )
         passages = self._select_diverse_top_k(
-            passages, k=self.settings.RAG_RERANK_TOP_K
+            passages, k=self.settings.RAG_PASSAGES_TOP_K
         )
         logger.info("✅ Selected {} passages after diversity filter", len(passages))
 

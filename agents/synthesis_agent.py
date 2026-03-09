@@ -90,7 +90,7 @@ class SynthesisAgent:
         prompt = CITATION_QA_TEMPLATE.format(
             context_str=context_str,
             query_str=query,
-            max_id=get_settings().RAG_RERANK_TOP_K,
+            max_id=self.settings.RAG_PASSAGES_TOP_K,
         )
 
         logger.debug(

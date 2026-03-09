@@ -92,7 +92,7 @@ async def test_acquisition_enriches_state_success(monkeypatch):
     )
 
     agent = AcquisitionAgent()
-    agent.PER_PDF_TIMEOUT = 5.0
+    agent._per_pdf_timeout = 5.0
     new_state = await agent.process(state)
 
     assert new_state.passages is not None
@@ -124,7 +124,7 @@ async def test_acquisition_timeout_skips(monkeypatch):
         finalists=[{"paperId": "slow1", "title": "T", "openAccessPdf": {"url": url}}],
     )
     agent = AcquisitionAgent()
-    agent.PER_PDF_TIMEOUT = 0.05
+    agent._per_pdf_timeout = 0.05
 
     new_state = await agent.process(state)
     assert new_state.passages is not None
@@ -146,7 +146,7 @@ async def test_acquisition_http_404_skips(monkeypatch):
         finalists=[{"paperId": "nf", "title": "T", "openAccessPdf": {"url": url}}],
     )
     agent = AcquisitionAgent()
-    agent.PER_PDF_TIMEOUT = 1.0
+    agent._per_pdf_timeout = 1.0
 
     new_state = await agent.process(state)
     assert new_state.passages is not None
@@ -169,7 +169,7 @@ async def test_acquisition_malformed_pdf_skips(monkeypatch):
         finalists=[{"paperId": "bad1", "title": "T", "openAccessPdf": {"url": url}}],
     )
     agent = AcquisitionAgent()
-    agent.PER_PDF_TIMEOUT = 1.0
+    agent._per_pdf_timeout = 1.0
 
     new_state = await agent.process(state)
     # should be skipped
@@ -193,7 +193,7 @@ async def test_acquisition_zero_successes_appends_error(monkeypatch):
     ]
     state = State(query="q", finalists=finalists)
     agent = AcquisitionAgent()
-    agent.PER_PDF_TIMEOUT = 1.0
+    agent._per_pdf_timeout = 1.0
 
     new_state = await agent.process(state)
     assert new_state.passages is not None
@@ -231,7 +231,7 @@ async def test_acquisition_get_raises_timeout(monkeypatch):
         ],
     )
     agent = AcquisitionAgent()
-    agent.PER_PDF_TIMEOUT = 0.5
+    agent._per_pdf_timeout = 0.5
 
     new_state = await agent.process(state)
     assert new_state.passages is not None
@@ -262,7 +262,7 @@ async def test_acquisition_parallel_10_with_2_failures(monkeypatch):
     state = State(query="q", finalists=finalists)
     agent = AcquisitionAgent()
     # make timeouts small so test doesn't actually wait long
-    agent.PER_PDF_TIMEOUT = 1.0
+    agent._per_pdf_timeout = 1.0
 
     start = time.monotonic()
     new_state = await agent.process(state)

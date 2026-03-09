@@ -221,16 +221,12 @@ class DiscoveryService:
 
                 # Determine weights based on intent
                 intent_type = optimized_queries.get("intent_type", "general")
-                weights = {
-                    "relevance": 0.60,
-                    "authority": 0.35,
-                    "recency": 0.05,
-                }  # Default
+                weights = dict(self.settings.DISCOVERY_DEFAULT_WEIGHTS)  # copy to avoid mutation
 
                 if intent_type == "news":
-                    weights = {"relevance": 0.50, "authority": 0.0, "recency": 0.50}
+                    weights = dict(self.settings.DISCOVERY_NEWS_WEIGHTS)
                 elif intent_type == "foundational":
-                    weights = {"relevance": 0.40, "authority": 0.60, "recency": 0.0}
+                    weights = dict(self.settings.DISCOVERY_FOUNDATIONAL_WEIGHTS)
                 logger.info(
                     f"🔍 DETECTED INTENT: {intent_type} | APPLYING WEIGHTS: {weights}"
                 )
