@@ -41,18 +41,19 @@ async def search_worker(app_instance: FastAPI):
     while True:
         try:
             # Get a "work item" out of the queue.
-            # Using the passed instance instead of global 'app' for better safety
-            query, deep_mode, progress_callback, future = (
+            query, progress_callback, future = (
                 await app_instance.state.search_queue.get()
             )
 
             try:
                 # Process the query
-                result = await app_instance.state.query_service.process_query(
-                    query,
-                    deep_mode=deep_mode,
-                    progress_callback=progress_callback,
-                )
+                result = await app_instance.state.research_service.research(query)
+                # Call progress callback if provided
+                if progress_callback:
+                    if asyncio.iscoroutinefunction(progress_callback):
+                        await progress_callback()
+                    else:
+                        progress_callback()
                 # Set the result
                 if not future.done():
                     future.set_result(result)
@@ -84,42 +85,36 @@ async def lifespan(app: FastAPI):
 
     # Initialize state attributes to avoid AttributeErrors if startup fails
     app.state.search_queue = asyncio.Queue()
-    app.state.query_service = None
-    app.state.embedding_model = None
+    app.state.research_service = None
+    app.state.discovery_service = None
     app.state.workers = []
 
     # --- STARTUP LOGIC ---
     try:
         from config.config import get_settings
-        from config.embedding_config import init_embedding
-        from services.query_service import QueryService
+        from services.discovery_service import DiscoveryService
+        from services.ingestion_service import IngestionService
+        from services.rag_service import RAGService
+        from services.research_service import ResearchService
 
         # 1. Load Settings
         settings = get_settings()
         settings.validate_keys()
 
-        # 2. Init Embedding Model (puts it on app.state.embedding_model)
-        embedding_model = None
-        try:
-            embedding_model = await init_embedding()
-            app.state.embedding_model = embedding_model
-            if embedding_model:
-                logger.info("✅ Embedding model loaded successfully")
-            else:
-                logger.warning("⚠️ Embedding model failed to load")
-        except Exception as e:
-            logger.warning(f"⚠️ Embedding model initialization failed: {e}")
-            # app.state.embedding_model is already None
+        # 2. Create services directly
+        discovery_service = DiscoveryService(settings)
+        ingestion_service = IngestionService()
+        rag_service = RAGService(settings)
+        research_service = ResearchService(
+            discovery_service, ingestion_service, rag_service
+        )
 
-        # 3. Create Singleton QueryService
-        # This will internally create Discovery, Ingestion, and RAG services
-        query_service = QueryService(settings=settings, embedding_model=embedding_model)
+        # 3. Store in State
+        app.state.discovery_service = discovery_service
+        app.state.research_service = research_service
+        logger.info("🚀 Research service initialized")
 
-        # 4. Store in State
-        app.state.query_service = query_service
-        logger.info("🚀 Query service initialized")
-
-        # 5. Init Workers
+        # 4. Init Workers
         # Start N workers for better concurrency
         CONCURRENT_WORKERS: int = 1
         app.state.workers = [
@@ -135,7 +130,7 @@ async def lifespan(app: FastAPI):
 
     except Exception as e:
         logger.critical(f"Failed to initialize application: {e}")
-        # app.state.query_service is already None
+        # app.state.research_service is already None
 
     # Expose concurrency controls to UI
     app.state.search_semaphore = search_semaphore
@@ -154,8 +149,8 @@ async def lifespan(app: FastAPI):
         await asyncio.gather(*app.state.workers, return_exceptions=True)
 
     # Close services
-    if hasattr(app.state, "query_service") and app.state.query_service:
-        await app.state.query_service.close()
+    if hasattr(app.state, "discovery_service") and app.state.discovery_service:
+        await app.state.discovery_service.close()
 
     logger.info("Shutdown complete")
 

@@ -2,20 +2,17 @@
 
 Responsibilities:
 5. PDF Acquisition
-6. Processing & Embedding
+6. Processing (Chunking)
 """
 
 import asyncio
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List
 
-import numpy as np
-from llama_index.core.schema import TextNode
 from loguru import logger
 
 from services.exceptions import AcquisitionError, ProcessingError
-from utils.embedding_utils import batched_embed
 
 if TYPE_CHECKING:
     from agents.acquisition_agent import AcquisitionAgent
@@ -35,13 +32,8 @@ class IngestionResult:
 class IngestionService:
     """Service for PDF acquisition and processing."""
 
-    def __init__(self, embedding_model: Any = None):
-        """Initialize the ingestion service.
-
-        Args:
-            embedding_model: Pre-loaded embedding model for chunk embedding.
-        """
-        self.embedding_model = embedding_model
+    def __init__(self):
+        """Initialize the ingestion service."""
         self._acquisition_agent = None
         self._processing_agent = None
 
@@ -78,13 +70,6 @@ class IngestionService:
         passages = []
         chunks = []
 
-        # Check if embedding model is available
-        if self.embedding_model is None:
-            logger.warning(
-                "⚠️ Embedding model not available - skipping ingestion stages."
-            )
-            return IngestionResult(passages=[], chunks=[], timing_breakdown={})
-
         # Stage 5: PDF Acquisition
         logger.info(
             "🧮 Stage 5: PDF Acquisition - downloading PDFs for {} finalists",
@@ -107,10 +92,12 @@ class IngestionService:
             state = await acquisition_agent.process(state)
             passages = state.passages or []
             timing_breakdown["pdf_acquisition"] = time.perf_counter() - stage_start
+            pdf_count = sum(1 for p in passages if p.metadata.get("text_source") == "pdf")
             logger.info(
-                "✅ PDF acquisition completed in {:.3f}s - acquired {} PDFs",
+                "✅ PDF acquisition completed in {:.3f}s - acquired {} PDFs, {} abstracts",
                 timing_breakdown["pdf_acquisition"],
-                len(passages),
+                pdf_count,
+                len(passages) - pdf_count,
             )
         except asyncio.CancelledError:
             logger.info("🛑 PDF Acquisition cancelled by user")
@@ -133,9 +120,9 @@ class IngestionService:
                 passages=[], chunks=[], timing_breakdown=timing_breakdown
             )
 
-        # Stage 6: Processing & Embedding
+        # Stage 6: Processing (Chunking)
         logger.info(
-            "📄 Stage 6: Processing & Embedding - chunking {} passages",
+            "📄 Stage 6: Processing - chunking {} passages",
             len(passages),
         )
         stage_start = time.perf_counter()
@@ -144,8 +131,6 @@ class IngestionService:
             state = await asyncio.to_thread(
                 processing_agent.process,
                 state,
-                embedding_model=self.embedding_model,
-                batch_size=32,
             )
             chunks = state.chunks or []
             timing_breakdown["processing"] = time.perf_counter() - stage_start
@@ -163,51 +148,3 @@ class IngestionService:
             chunks=chunks,
             timing_breakdown=timing_breakdown,
         )
-
-    async def ingest_abstracts(self, papers: List["Paper"]) -> List[TextNode]:
-        """Ingest abstracts from papers in Fast Mode.
-
-        Args:
-            papers: List of Paper objects.
-
-        Returns:
-            List of TextNodes with embeddings.
-        """
-        logger.info("🚀 Fast Mode active: Skipping PDF download, using abstracts.")
-        chunks = []
-
-        # Create nodes from abstracts
-        for paper in papers:
-            abstract = paper.abstract
-            if not abstract:
-                continue
-
-            # Handle URL extraction safely from Pydantic model
-            url = paper.url
-            if not url and paper.openAccessPdf:
-                url = paper.openAccessPdf.get("url")
-
-            node = TextNode(text=abstract)
-            node.metadata = {
-                "paper_id": paper.paperId,
-                "paper_title": paper.title,
-                "url": url,
-                "year": paper.year,
-                "section": "Abstract",
-            }
-            chunks.append(node)
-
-        # Generate embeddings
-        if chunks:
-            texts = [node.get_content() for node in chunks]
-            embeddings = await asyncio.to_thread(
-                batched_embed, texts, self.embedding_model
-            )
-            for node, embedding in zip(chunks, embeddings):
-                node.embedding = (
-                    embedding.tolist()
-                    if isinstance(embedding, np.ndarray)
-                    else embedding
-                )
-
-        return chunks

@@ -78,5 +78,3 @@ async def test_malformed_json_returns_safe_fallback():
     with patch.object(agent, "_call_llm", new=AsyncMock(return_value="not json at all")):
         result = await agent.evaluate("any query", BRIEF, POOR_ANSWER, PRIOR_QUERIES)
     assert result["is_complete"] is True
-        result = await agent.evaluate("any query", BRIEF, POOR_ANSWER, PRIOR_QUERIES)
-    assert result["is_complete"] is True

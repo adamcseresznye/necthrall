@@ -28,7 +28,21 @@ class ResearchResult:
     rounds_completed: int
     searched_queries: List[str]
     total_chunks: int
+    finalists: List[Any] = field(default_factory=list)
+    passages: List[Any] = field(default_factory=list)
     timing_breakdown: dict[str, float] = field(default_factory=dict)
+    error_message: Optional[str] = None
+    error_stage: Optional[str] = None
+
+    @property
+    def success(self) -> bool:
+        """Return True if an answer was produced."""
+        return self.answer is not None
+
+    @property
+    def execution_time(self) -> float:
+        """Return total execution time in seconds."""
+        return self.timing_breakdown.get("total", 0.0)
 
 
 class ResearchService:
@@ -78,6 +92,8 @@ class ResearchService:
         searched_queries: List[str] = []
         current_chunks: List[Any] = []
         current_answer: Optional[str] = None
+        all_finalists: List[Any] = []
+        final_passages: List[Any] = []
         reflection: Optional[ReflectionResult] = None
 
         for round_num in range(1, MAX_ROUNDS + 1):
@@ -123,9 +139,10 @@ class ResearchService:
                 )
                 break
 
-            # Track seen papers
+            # Track seen papers and accumulate finalists
             for p in new_finalists:
                 seen_paper_ids.add(p.paperId)
+                all_finalists.append(p)
 
             # --- Ingestion ---
             t0 = time.perf_counter()
@@ -162,6 +179,7 @@ class ResearchService:
                 )
                 if rag_result.answer is not None:
                     current_answer = rag_result.answer
+                    final_passages = rag_result.passages
                 else:
                     logger.warning(
                         "ResearchService: synthesis returned None on round {} — keeping previous answer",
@@ -219,6 +237,8 @@ class ResearchService:
             rounds_completed=len(searched_queries),
             searched_queries=searched_queries,
             total_chunks=len(current_chunks),
+            finalists=all_finalists,
+            passages=final_passages,
             timing_breakdown=timing,
         )
 

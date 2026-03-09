@@ -65,8 +65,10 @@ async def test_discover_dedup_filters_seen_papers(mock_settings):
     paper_a = _make_paper("aaa", "Paper A")
     paper_b = _make_paper("bbb", "Paper B")
 
-    # generate_single_query returns a plain string
-    svc.optimizer.generate_single_query = AsyncMock(return_value="test query keyword")
+    # optimize returns a dict with intent_type and final_rephrase
+    svc.optimizer.optimize = AsyncMock(
+        return_value={"intent_type": "general", "final_rephrase": "test query keyword"}
+    )
 
     # rank_papers returns both papers synchronously; we bypass asyncio.to_thread
     svc.ranker.rank_papers = MagicMock(return_value=[paper_a, paper_b])
@@ -91,15 +93,8 @@ async def test_discover_no_dedup_without_existing_ids(mock_settings):
     paper_a = _make_paper("aaa", "Paper A")
     paper_b = _make_paper("bbb", "Paper B")
 
-    svc.optimizer.generate_dual_queries = AsyncMock(
-        return_value={
-            "strategy": "expansion",
-            "final_rephrase": "test query",
-            "primary": "test query primary",
-            "broad": "test query broad",
-            "alternative": "test query alt",
-            "intent_type": "general",
-        }
+    svc.optimizer.optimize = AsyncMock(
+        return_value={"intent_type": "general", "final_rephrase": "test query keyword"}
     )
     svc.ranker.rank_papers = MagicMock(return_value=[paper_a, paper_b])
 
@@ -114,49 +109,20 @@ async def test_discover_no_dedup_without_existing_ids(mock_settings):
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_discover_uses_single_query_when_existing_ids_provided(mock_settings):
-    """When existing_paper_ids is provided, generate_single_query is called instead of generate_dual_queries."""
+async def test_discover_uses_optimize_always(mock_settings):
+    """DiscoveryService always uses optimizer.optimize() for query optimization."""
     svc = _make_discovery_service(mock_settings)
 
-    svc.optimizer.generate_single_query = AsyncMock(
-        return_value="focused keyword query"
+    svc.optimizer.optimize = AsyncMock(
+        return_value={"intent_type": "general", "final_rephrase": "optimized query"}
     )
-    svc.optimizer.generate_dual_queries = AsyncMock()  # should NOT be called
     svc.ranker.rank_papers = MagicMock(return_value=[])
 
     _patch_search_and_gate(svc, [])
 
     await svc.discover("test query", existing_paper_ids=set())
 
-    svc.optimizer.generate_single_query.assert_awaited_once()
-    svc.optimizer.generate_dual_queries.assert_not_awaited()
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_discover_uses_dual_queries_when_no_existing_ids(mock_settings):
-    """When existing_paper_ids is None, generate_dual_queries is called (original behaviour)."""
-    svc = _make_discovery_service(mock_settings)
-
-    svc.optimizer.generate_dual_queries = AsyncMock(
-        return_value={
-            "strategy": "expansion",
-            "final_rephrase": "test query",
-            "primary": "primary q",
-            "broad": "broad q",
-            "alternative": "alt q",
-            "intent_type": "general",
-        }
-    )
-    svc.optimizer.generate_single_query = AsyncMock()  # should NOT be called
-    svc.ranker.rank_papers = MagicMock(return_value=[])
-
-    _patch_search_and_gate(svc, [])
-
-    await svc.discover("test query")
-
-    svc.optimizer.generate_dual_queries.assert_awaited_once()
-    svc.optimizer.generate_single_query.assert_not_awaited()
+    svc.optimizer.optimize.assert_awaited_once()
 
 
 @pytest.mark.unit
@@ -167,7 +133,9 @@ async def test_discover_dedup_empty_set_does_not_filter(mock_settings):
 
     paper_a = _make_paper("aaa", "Paper A")
 
-    svc.optimizer.generate_single_query = AsyncMock(return_value="keyword query")
+    svc.optimizer.optimize = AsyncMock(
+        return_value={"intent_type": "general", "final_rephrase": "keyword query"}
+    )
     svc.ranker.rank_papers = MagicMock(return_value=[paper_a])
 
     _patch_search_and_gate(svc, [paper_a])

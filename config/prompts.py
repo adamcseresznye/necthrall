@@ -82,63 +82,29 @@ CITATION_QA_TEMPLATE = (
     "Answer (using ONLY Sources 1-{max_id}):"
 )
 
-QUERY_OPTIMIZATION_TEMPLATE = """You are a query optimization expert for scientific research using Semantic Scholar API.
+QUERY_OPTIMIZATION_TEMPLATE = """\
+You are a scientific search query optimizer for Semantic Scholar.
 
-Your task: Analyze the user's query to determine the research intent, scope, and optimal search terms.
+Given the research question below, return a JSON object with exactly two fields.
 
-User input: "{query}"
+STEP 1 — INTENT:
+Classify the query intent:
+- "news": The user wants recent findings, current events, or latest updates.
+- "foundational": The user wants seminal works, review articles, or established theory.
+- "general": Everything else.
 
-**1. INTENT CLASSIFICATION (Semantic Analysis):**
-Classify the user's research goal into one of three types based on the *meaning* of the question:
-- **"news"**: The user is looking for the *frontier*. Use ONLY if the query implies a need for the latest findings, current state-of-the-art, or recent shifts (e.g., "latest updates on...", "2024 findings").
-- **"foundational"**: The user is looking for the *roots*. Use if the query asks for established theories, history, **seminal papers**, or **pivotal clinical trials**.
-- **"general"**: The user is looking for *facts/synthesis*. Use for mechanistic questions, effect analysis, or specific lookup questions (e.g., "results of Sutton 2020"). **Default to this if unsure.**
+STEP 2 — REPHRASE:
+Rewrite the query as a short, keyword-focused Semantic Scholar search string.
+Rules: no question marks, 4–8 words, use scientific terminology.
+Do NOT include year ranges, publication dates, or temporal keywords (e.g. '2023', '2024', 'recent') in final_rephrase. The API handles date filtering separately.
 
-**2. SCOPE ANALYSIS (The "Switch"):**
-Determine if the user has a **Targeted** or **Thematic** interest.
-- **Targeted (Narrow):** The user mentions a specific Author (e.g., "Sutton"), Year ("2020"), Acronym ("TREAT trial"), or specific Statistic ("average weight loss").
-    * *Action:* **PRESERVE** these identifiers in the `primary` query. Do not summarize them.
-- **Thematic (Broad):** The user asks about a general concept (e.g., "benefits of fasting").
-    * *Action:* focus `primary` on the core subject. Focus `broad` on reviews/meta-analyses.
-
-**3. STRATEGY SELECTION:**
-
-**Strategy A: Expansion (Default)**
-Use this for single-topic or straightforward queries.
-
-Output Format (JSON):
+Return ONLY this JSON, no extra text:
 {{
-    "strategy": "expansion",
     "intent_type": "news | foundational | general",
-    "final_rephrase": "Clear natural language question for semantic search",
-    "primary": "Subject + Identifiers (if Targeted) OR Context (if Thematic). MAX 6 WORDS.",
-    "broad": "Subject + 'Review'/'Meta-analysis' (if Thematic) OR Main Concept (if Targeted). MAX 4 WORDS.",
-    "alternative": "Subject + 'Clinical Trial'/'RCT' (if Targeted) OR Controversy/Mechanism (if Thematic). MAX 4 WORDS."
+    "final_rephrase": "Your rephrased keyword query here"
 }}
 
-**Strategy B: Decomposition**
-Use this for complex, multi-part, or comparative queries that require breaking down.
-
-Output Format (JSON):
-{{
-    "strategy": "decomposition",
-    "intent_type": "general",
-    "final_rephrase": "The overarching question in clear natural language",
-    "sub_queries": [
-        "Subject + Subtopic 1 (MAX 4 WORDS)",
-        "Subject + Subtopic 2 (MAX 4 WORDS)",
-        "..."
-    ]
-}}
-
-**CRITICAL RULES:**
-- **ABSOLUTELY NO boolean operators** (AND, OR, NOT).
-- **ABSOLUTELY NO parentheses** or special characters.
-- **Length Constraint:**
-    - For **Targeted** queries: Up to 6 words allowed (to fit Author + Year + Topic).
-    - For **Thematic** queries: Keep it under 4 words (shorter is better for broad search).
-- **Diversity:** The `primary`, `broad`, and `alternative` queries must look DIFFERENT to capture different papers.
-- Return ONLY valid JSON.
+Research question: {query}
 """
 
 PLANNING_TEMPLATE = """You are a research planning expert.

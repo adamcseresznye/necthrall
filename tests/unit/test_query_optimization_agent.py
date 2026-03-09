@@ -1,3 +1,5 @@
+"""Unit tests for QueryOptimizationAgent.optimize() method."""
+
 import json
 from unittest.mock import AsyncMock, patch
 
@@ -8,17 +10,14 @@ from agents.query_optimization_agent import QueryOptimizationAgent
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_generate_dual_queries_valid_query():
-    """generate_dual_queries should return four distinct optimized queries for a valid input"""
+async def test_optimize_returns_two_fields():
+    """optimize() should return dict with intent_type and final_rephrase."""
     agent = QueryOptimizationAgent()
     query = "fasting risks"
 
     expected_output = {
         "intent_type": "general",
-        "final_rephrase": "cardiovascular and metabolic risks associated with intermittent fasting protocols",
-        "primary": "intermittent fasting cardiovascular risks adverse effects",
-        "broad": "fasting protocols health outcomes safety cardiovascular metabolic",
-        "alternative": "time-restricted eating cardiac complications health risks",
+        "final_rephrase": "cardiovascular and metabolic risks of intermittent fasting",
     }
 
     with patch.object(
@@ -26,17 +25,18 @@ async def test_generate_dual_queries_valid_query():
     ) as mock_generate:
         mock_generate.return_value = json.dumps(expected_output)
 
-        result = await agent.generate_dual_queries(query)
+        result = await agent.optimize(query)
 
         assert result == expected_output
-        assert all(isinstance(v, str) and v for v in result.values())
+        assert "intent_type" in result
+        assert "final_rephrase" in result
         mock_generate.assert_called_once()
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_generate_dual_queries_llm_timeout_fallback():
-    """If LLM call fails, generate_dual_queries should return original query for all fields"""
+async def test_optimize_llm_failure_fallback():
+    """If LLM call fails, optimize() should return fallback with original query."""
     agent = QueryOptimizationAgent()
     query = "test query"
 
@@ -45,23 +45,17 @@ async def test_generate_dual_queries_llm_timeout_fallback():
     ) as mock_generate:
         mock_generate.side_effect = Exception("LLM timeout")
 
-        result = await agent.generate_dual_queries(query)
+        result = await agent.optimize(query)
 
-        expected = {
-            "strategy": "expansion",
-            "final_rephrase": query,
-            "primary": query,
-            "broad": query,
-            "alternative": query,
-        }
-        assert result == expected
+        assert result["intent_type"] == "general"
+        assert result["final_rephrase"] == query
         mock_generate.assert_called_once()
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_generate_dual_queries_invalid_json_fallback():
-    """If LLM returns invalid JSON, generate_dual_queries should return original query for all fields"""
+async def test_optimize_invalid_json_fallback():
+    """If LLM returns invalid JSON, optimize() should return fallback."""
     agent = QueryOptimizationAgent()
     query = "test query"
 
@@ -70,23 +64,17 @@ async def test_generate_dual_queries_invalid_json_fallback():
     ) as mock_generate:
         mock_generate.return_value = "invalid json {"
 
-        result = await agent.generate_dual_queries(query)
+        result = await agent.optimize(query)
 
-        expected = {
-            "strategy": "expansion",
-            "final_rephrase": query,
-            "primary": query,
-            "broad": query,
-            "alternative": query,
-        }
-        assert result == expected
+        assert result["intent_type"] == "general"
+        assert result["final_rephrase"] == query
         mock_generate.assert_called_once()
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_generate_dual_queries_empty_query():
-    """generate_dual_queries should handle empty query gracefully by returning empty strings"""
+async def test_optimize_empty_query():
+    """optimize() should handle empty query gracefully."""
     agent = QueryOptimizationAgent()
     query = ""
 
@@ -94,61 +82,34 @@ async def test_generate_dual_queries_empty_query():
         agent.router, "generate", new_callable=AsyncMock
     ) as mock_generate:
         mock_generate.return_value = json.dumps(
-            {"final_rephrase": "", "primary": "", "broad": "", "alternative": ""}
+            {"intent_type": "general", "final_rephrase": ""}
         )
 
-        result = await agent.generate_dual_queries(query)
+        result = await agent.optimize(query)
 
-        expected = {
-            "intent_type": "general",
-            "final_rephrase": "",
-            "primary": "",
-            "broad": "",
-            "alternative": "",
-        }
-        assert result == expected
-        mock_generate.assert_called_once()
+        assert result["intent_type"] == "general"
+        assert result["final_rephrase"] == ""
         mock_generate.assert_called_once()
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_generate_single_query_returns_keyword_string():
-    """generate_single_query should return a clean keyword string with no '?' and ≤15 words"""
+async def test_optimize_preserves_intent_type():
+    """optimize() should preserve intent_type from LLM response."""
     agent = QueryOptimizationAgent()
+    query = "what are seminal works on CRISPR?"
 
-    with patch.object(agent, "_call_llm", new_callable=AsyncMock) as mock_call_llm:
-        mock_call_llm.return_value = "CRISPR-Cas9 mechanism genome editing"
+    expected_output = {
+        "intent_type": "foundational",
+        "final_rephrase": "CRISPR-Cas9 seminal works review gene editing",
+    }
 
-        result = await agent.generate_single_query(
-            "What are the mechanisms of CRISPR-Cas9?"
-        )
+    with patch.object(
+        agent.router, "generate", new_callable=AsyncMock
+    ) as mock_generate:
+        mock_generate.return_value = json.dumps(expected_output)
 
-        assert isinstance(result, str)
-        assert "?" not in result
-        assert len(result.split()) <= 15
-        mock_call_llm.assert_called_once()
+        result = await agent.optimize(query)
 
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_generate_single_query_fallback_on_llm_failure():
-    """generate_single_query should return the original query unchanged when LLM returns None"""
-    agent = QueryOptimizationAgent()
-    query = "What are the cognitive effects of sleep deprivation?"
-
-    with patch.object(agent, "_call_llm", new_callable=AsyncMock) as mock_call_llm:
-        mock_call_llm.return_value = None
-
-        result = await agent.generate_single_query(query)
-
-        assert result == query
-        mock_call_llm.assert_called_once()
-
-
-@pytest.mark.unit
-def test_single_query_fallback_direct():
-    """_single_query_fallback should return the query unchanged"""
-    agent = QueryOptimizationAgent()
-    q = "some query"
-    assert agent._single_query_fallback(q) == q
+        assert result["intent_type"] == "foundational"
+        assert result["final_rephrase"] == expected_output["final_rephrase"]

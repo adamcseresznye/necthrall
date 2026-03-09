@@ -5,7 +5,6 @@ Implements a multi-stage hybrid ranking model combining:
     - BM25 (Lexical)
     - TF-IDF (Lexical)
     - LSA (Latent Semantic)
-    - BM25-SPECTER Centroid (Semantic)
 2.  **Authority**: Log-normalized influential/total citations.
 3.  **Recency**: Exponential decay.
 
@@ -31,7 +30,6 @@ from models.state import Paper
 # --- Configuration ---
 RRF_K = 60  # Constant for Reciprocal Rank Fusion (RRF)
 LSA_COMPONENTS = 100  # Number of components for LSA
-CENTROID_K = 5  # Number of top BM25 papers to use for centroid
 CURRENT_YEAR = date.today().year
 RECENCY_LAMBDA = 0.1  # Decay rate for recency (0.1 = ~10 year half-life)
 
@@ -133,48 +131,12 @@ def _compute_lsa_ranks(query: str, corpus: List[str], n_components: int) -> np.n
         return np.full(len(corpus), len(corpus), dtype=int)
 
 
-def _compute_bm25_centroid_ranks(df: pd.DataFrame, centroid_k: int) -> np.ndarray:
-    """Ranks papers by similarity to the centroid of the top 'k' BM25 papers."""
-    df["specter_vector"] = df["embedding"].apply(
-        lambda x: x.get("specter") if isinstance(x, dict) else None
-    )
-    df_clean = df.dropna(subset=["specter_vector"]).copy()
-
-    if df_clean.empty:
-        logger.warning("No SPECTER embeddings found for centroid ranking.")
-        return np.full(len(df), len(df), dtype=int)
-
-    try:
-        embeddings_clean_all = np.stack(df_clean["specter_vector"].values)
-    except ValueError as e:
-        logger.error(f"Error stacking embeddings (mismatched dimensions?): {e}")
-        return np.full(len(df), len(df), dtype=int)
-
-    top_k_papers = df_clean.sort_values(by="bm25_rank", ascending=True).head(centroid_k)
-
-    if top_k_papers.empty:
-        logger.warning("No top BM25 papers found to create centroid.")
-        return np.full(len(df), len(df), dtype=int)
-
-    top_k_ilocs = df_clean.index.get_indexer(top_k_papers.index)
-    top_k_vectors = embeddings_clean_all[top_k_ilocs]
-    centroid_query_vector = np.mean(top_k_vectors, axis=0).reshape(1, -1)
-
-    scores = cosine_similarity(centroid_query_vector, embeddings_clean_all).flatten()
-
-    ranked_scores_series = pd.Series(scores, index=df_clean.index)
-    full_scores_series = ranked_scores_series.reindex(df.index).fillna(-np.inf)
-
-    return rankdata(-full_scores_series.values, "dense")
-
-
 def _compute_rrf_score(df: pd.DataFrame) -> pd.Series:
     """Computes the Reciprocal Rank Fusion (RRF) score for relevance."""
     return (
         1 / (df["bm25_rank"] + RRF_K)
         + 1 / (df["tfid_rank"] + RRF_K)
         + 1 / (df["lsa_rank"] + RRF_K)
-        + 1 / (df["pseudo_specter_rank"] + RRF_K)
     )
 
 
@@ -314,11 +276,6 @@ class RankingAgent:
 
         logger.debug("Computing LSA ranks (note: inefficient, re-builds index)...")
         df["lsa_rank"] = _compute_lsa_ranks(query, corpus, n_components=LSA_COMPONENTS)
-
-        logger.debug("Computing BM25-SPECTER centroid ranks...")
-        df["pseudo_specter_rank"] = _compute_bm25_centroid_ranks(
-            df, centroid_k=CENTROID_K
-        )
 
         logger.debug("Computing final RRF, authority, recency, and weighted score...")
         ranked_df = _compute_final_ranking(df, weights)

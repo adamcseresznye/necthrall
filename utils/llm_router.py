@@ -42,7 +42,8 @@ class LLMRouter:
         }
 
     async def _call_model(
-        self, model: str, prompt: str, api_key: str, timeout: int = 30
+        self, model: str, prompt: str, api_key: str, timeout: int = 30,
+        max_tokens: Optional[int] = None,
     ):
         """Private helper to make an LLM API call with the given model and credentials.
 
@@ -51,6 +52,7 @@ class LLMRouter:
             prompt: The prompt text to send to the LLM.
             api_key: The API key for the provider.
             timeout: Request timeout in seconds (default 30).
+            max_tokens: Optional cap on the number of tokens in the response.
 
         Returns:
             The response object from litellm.acompletion.
@@ -58,16 +60,17 @@ class LLMRouter:
         Raises:
             Any exception from the LLM provider (APIError, TimeoutError, etc.)
         """
+        extra: dict = {"max_tokens": max_tokens} if max_tokens is not None else {}
         return await litellm.acompletion(
             model=model,
             messages=[{"role": "user", "content": prompt}],
             timeout=timeout,
             api_key=api_key,
-            # max_tokens=4096,
             num_retries=0,
+            **extra,
         )
 
-    async def generate(self, prompt: str, model_type: str) -> str:
+    async def generate(self, prompt: str, model_type: str, max_tokens: Optional[int] = None) -> str:
         """Generate a response for the given `prompt` using models associated
         with `model_type`.
 
@@ -82,6 +85,7 @@ class LLMRouter:
             prompt: The prompt text to send to the LLM.
             model_type: One of the keys present in the router ("optimization",
                 "synthesis").
+            max_tokens: Optional cap on the number of tokens in the response.
 
         Returns:
             The text content of the first model choice.
@@ -103,7 +107,7 @@ class LLMRouter:
         # Try primary model
         try:
             response = await self._call_model(
-                primary, prompt, self._primary_api_key, timeout
+                primary, prompt, self._primary_api_key, timeout, max_tokens
             )
             used_label = "primary"
             used_model_name = primary
@@ -114,7 +118,7 @@ class LLMRouter:
             # Try fallback model
             try:
                 response = await self._call_model(
-                    fallback, prompt, self._secondary_api_key, timeout
+                    fallback, prompt, self._secondary_api_key, timeout, max_tokens
                 )
                 used_label = "fallback"
                 used_model_name = fallback

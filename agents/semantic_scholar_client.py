@@ -1,15 +1,11 @@
 """Async Semantic Scholar client used by the retrieval agent.
 
-Implements multi-query parallel search with basic rate limiting, retries
-and normalization helper for the pipeline `State`.
+Implements search with basic rate limiting, retries and normalization
+helper for the pipeline `State`.
 
 Usage example:
     client = SemanticScholarClient(api_key="...")
-    papers = await client.multi_query_search([
-        "primary query",
-        "broad query",
-        "alternative query",
-    ], limit_per_query=100)
+    papers = await client.multi_query_search(["research query"], limit_per_query=100)
 
 The returned items are normalized dictionaries matching the project's
 State.papers expectations.
@@ -35,10 +31,9 @@ class SemanticScholarClient:
     """Async Semantic Scholar client.
 
     Responsibilities
-    - Run three variant queries in parallel (PRIMARY / BROAD / ALTERNATIVE)
+    - Run search queries in parallel
     - Deduplicate by `paperId`
     - Filter to papers with `openAccessPdf.url`
-    - Request SPECTER2 embeddings via `fields`
     - Use an asyncio.Semaphore(10) to rate-limit concurrent requests
 
     The client is intentionally small and uses aiohttp for async HTTP calls.
@@ -93,7 +88,6 @@ class SemanticScholarClient:
                 "citationCount",
                 "influentialCitationCount",
                 "openAccessPdf",
-                "embedding",
                 "authors",
                 "venue",
                 "externalIds",
@@ -115,33 +109,32 @@ class SemanticScholarClient:
         elapsed = time.perf_counter() - start
         logger.info("multi_query_search finished in {:.3f}s", elapsed)
 
-        # Log how many raw hits we received per input query (primary/broad/alternative
-        # ordering is expected by the caller). This helps diagnose which variant
-        # produced the most results and identify coverage issues early.
+        # Log how many raw hits we received per input query.
+        # This helps diagnose which query produced the most results.
         try:
-            # Always log the raw_results structure so we can inspect exact return types/values
             logger.debug(f"Semantic Scholar raw_results repr: {raw_results!r}")
 
-            labels = ["primary", "broad", "alternative"]
             for i, res in enumerate(raw_results):
-                label = labels[i] if i < len(labels) else f"query_{i}"
                 preview = queries[i][:80] if i < len(queries) else ""
 
-                # Successful list of hits
                 if isinstance(res, list):
                     logger.info(
-                        f"Semantic Scholar raw hits: {label} returned {len(res)} results (query preview: '{preview}')"
+                        "Semantic Scholar query[{}] returned {} results ('{}')",
+                        i,
+                        len(res),
+                        preview,
                     )
-                # Exception returned by asyncio.gather(..., return_exceptions=True)
                 elif isinstance(res, Exception):
-                    # Use exception-level logging so stack/trace is captured
                     logger.exception(
-                        f"Semantic Scholar query {label} failed for preview '{preview}': {res}"
+                        "Semantic Scholar query[{}] failed ('{}'): {}", i, preview, res
                     )
                 else:
-                    # Unexpected return type — include repr for diagnosis
                     logger.info(
-                        f"Semantic Scholar raw hits: {label} returned unexpected type {type(res)} (value: {res!r}) (query preview: '{preview}')"
+                        "Semantic Scholar query[{}] returned unexpected type {} (value: {!r}) ('{}')",
+                        i,
+                        type(res),
+                        res,
+                        preview,
                     )
         except Exception:
             # Non-fatal logging helper; do not fail the search flow if logging errors occur
@@ -197,35 +190,8 @@ class SemanticScholarClient:
             # Normalize and append
             papers.append(self.normalize_paper(p))
 
-        # papers = list(seen.values())
-
-        # count how many papers actually have a non-empty embedding vector
-        embedded = 0
-        for p in papers:
-            emb_block = p.get("embedding") or {}
-            if not emb_block:
-                continue
-            # Consider any non-empty list/sequence as an embedding vector
-            has_vec = False
-            for v in emb_block.values():
-                if v is None:
-                    continue
-                try:
-                    if isinstance(v, (list, tuple)) and len(v) > 0:
-                        has_vec = True
-                        break
-                    # numpy arrays and similar have __len__
-                    if hasattr(v, "__len__") and len(v) > 0:
-                        has_vec = True
-                        break
-                except Exception:
-                    # defensive: ignore anything that errors when checking len
-                    continue
-            if has_vec:
-                embedded += 1
-
         logger.info(
-            f"multi_query_search returning {len(papers)} papers, {embedded} have embeddings (deduped & filtered)"
+            f"multi_query_search returning {len(papers)} papers (deduped & filtered)"
         )
         return papers
 
@@ -309,12 +275,14 @@ class SemanticScholarClient:
                             f"Semantic Scholar rate limited (429) for {query}: {text}"
                         )
                         raise RuntimeError("Semantic Scholar API rate limited (429)")
-                    elif resp.status == 503:
+                    elif resp.status in (500, 502, 503, 504):
                         text = await resp.text()
                         logger.error(
-                            f"Semantic Scholar service unavailable (503) for query={query}: {text}"
+                            f"Semantic Scholar transient error ({resp.status}) for query={query}: {text}"
                         )
-                        raise RuntimeError("Semantic Scholar service unavailable (503)")
+                        raise RuntimeError(
+                            f"Semantic Scholar transient error ({resp.status})"
+                        )
                     else:
                         text = await resp.text()
                         logger.error(
@@ -338,28 +306,8 @@ class SemanticScholarClient:
         """Normalize a raw paper dict from Semantic Scholar into the pipeline schema.
 
         This function extracts the expected fields and applies sensible
-        defaults when fields are missing. Inline comments explain each
-        transformation to aid readability.
+        defaults when fields are missing.
         """
-        # Extract embedding if present. The search API returns embeddings as a nested
-        # dict with 'model' and 'vector' keys (e.g., {'model': 'specter_v1', 'vector': [...]}).
-        # We normalize this to store the vector under 'specter_v2' key for consistency
-        # with downstream pipeline expectations (quality_gate, ranking_agent).
-        specter_vec = None
-        emb_block = paper.get("embedding")
-        if isinstance(emb_block, dict):
-            # Check for the nested structure returned by search API
-            if "vector" in emb_block:
-                specter_vec = emb_block["vector"]
-            # Fallback: check for already-normalized specter_v2 key
-            elif "specter_v2" in emb_block:
-                specter_vec = emb_block["specter_v2"]
-        # Handle flattened key format (rare, for backwards compatibility)
-        elif "embedding.specter_v1" in paper:
-            specter_vec = paper.get("embedding.specter_v1")
-        elif "embedding.specter_v2" in paper:
-            specter_vec = paper.get("embedding.specter_v2")
-
         # Build normalized dict with defaults for missing fields
         normalized: Dict[str, Any] = {
             # Identity
@@ -373,8 +321,6 @@ class SemanticScholarClient:
             "influentialCitationCount": paper.get("influentialCitationCount", 0),
             # PDF info: ensure we always return a dict (may be empty)
             "openAccessPdf": paper.get("openAccessPdf") or {},
-            # Embedding: normalize to specter_v2 key regardless of source model
-            "embedding": {"specter": specter_vec} if specter_vec is not None else {},
             # Authors list and venue
             "authors": paper.get("authors", []),
             "venue": paper.get("venue"),

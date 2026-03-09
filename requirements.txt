@@ -1,3 +1,35 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:449ac3f9b72672955ffc2826ee3f224b04a9d9cb21ba54019784072919624f25
-size 463
+# Core Framework
+fastapi
+uvicorn[standard]
+pydantic
+python-dotenv
+python-multipart
+itsdangerous
+
+# Frontend
+nicegui
+
+# LLM and API Clients
+litellm
+semanticscholar
+curl_cffi>=0.5.10
+llama-index
+llama-index-core
+llama-index-llms-litellm
+
+# ML / Ranking
+numpy
+bm25s
+scikit-learn
+
+# PDF Processing
+pymupdf4llm
+
+# Utilities
+loguru
+
+# Testing
+pytest
+pytest-asyncio
+httpx
+deepeval

@@ -221,5 +221,3 @@ def test_memory_logging(monkeypatch, caplog):
     assert ("ram" in joined) or (
         "mb" in joined
     ), f"Expected memory info to be logged, got: {joined}"
-        "mb" in joined
-    ), f"Expected memory info to be logged, got: {joined}"

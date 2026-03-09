@@ -1,16 +1,13 @@
 from __future__ import annotations
 
 import time
-from typing import Any, List, Optional
+from typing import Any, List
 
-import numpy as np
 from llama_index.core.node_parser import SentenceSplitter
 from llama_index.core.schema import Document
 from loguru import logger
 
-from config.config import get_settings
 from models.state import State
-from utils.embedding_utils import batched_embed
 
 
 class ProcessingAgent:
@@ -37,8 +34,6 @@ class ProcessingAgent:
     def process(
         self,
         state: State,
-        embedding_model: Optional[object] = None,
-        batch_size: int = 32,
     ) -> State:
         """Process `state.passages` and populate `state.chunks`."""
         start_time = time.perf_counter()
@@ -150,74 +145,6 @@ class ProcessingAgent:
             msg = "Zero chunks generated from passages"
             logger.error(msg)
             state.append_error(msg)
-
-        # Embedding Logic
-        # Skip entirely in BM25-only mode — BM25Retriever never reads node.metadata["embedding"]
-        _bm25_only = get_settings().RAG_RETRIEVAL_MODE == "bm25_only"
-        if _bm25_only:
-            logger.info("BM25-only mode: skipping chunk embedding generation")
-
-        if not _bm25_only and embedding_model is not None and all_chunks:
-            texts: List[str] = []
-            for node in all_chunks:
-                if hasattr(node, "get_text"):
-                    try:
-                        texts.append(node.get_text())
-                    except Exception:
-                        texts.append("")
-                elif hasattr(node, "text"):
-                    texts.append(getattr(node, "text") or "")
-                else:
-                    texts.append("")
-
-            # Retry logic
-            max_attempts = 3
-            base_backoff = 0.5
-            embeddings = None
-            for attempt in range(1, max_attempts + 1):
-                try:
-                    emb_start = time.perf_counter()
-                    embeddings = batched_embed(
-                        texts,
-                        embedding_model=embedding_model,
-                        batch_size=int(batch_size),
-                    )
-                    emb_end = time.perf_counter()
-                    embedding_time = emb_end - emb_start
-                    break
-                except Exception as exc:
-                    logger.exception(
-                        {
-                            "event": "embedding_attempt_failed",
-                            "attempt": attempt,
-                            "error": str(exc),
-                        }
-                    )
-                    if attempt < max_attempts:
-                        wait = base_backoff * (2 ** (attempt - 1))
-                        time.sleep(wait)
-                        continue
-                    else:
-                        state.append_error("Batched embedding failed")
-
-            if embeddings is not None:
-                for idx, (node, emb) in enumerate(zip(all_chunks, embeddings)):
-                    try:
-                        arr = np.asarray(emb, dtype=float)
-                        if arr.shape != (384,):
-                            continue
-                        node.metadata["embedding"] = arr.tolist()
-                    except Exception as e:
-                        logger.exception("Failed to attach embedding", idx=idx)
-
-            logger.info(
-                {
-                    "event": "embedding_complete",
-                    "chunks_embedded": len(all_chunks) if embeddings is not None else 0,
-                    "embedding_time_s": embedding_time,
-                    "chunking_time_s": chunking_time,
-                }
-            )
 
         state.update_fields(chunks=all_chunks)
 

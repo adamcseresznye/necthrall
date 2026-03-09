@@ -2,7 +2,6 @@
 # Necthrall - Optimized Dockerfile for Hugging Face Spaces (Docker SDK)
 # ============================================================================
 # - Base: python:3.11-slim
-# - Pre-downloads sentence-transformers/all-MiniLM-L6-v2
 # - Runs as non-root user (UID 1000) on port 7860
 # ============================================================================
 
@@ -36,16 +35,7 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt && \
     rm /tmp/requirements.txt
 
 # ============================================================================
-# STEP 3: Pre-download and convert embedding model to ONNX (cached in image layer)
-# ============================================================================
-# Copy the setup script first
-COPY scripts/setup_onnx.py /tmp/setup_onnx.py
-
-# Run the ONNX setup script to download and quantize the model
-RUN python /tmp/setup_onnx.py && rm /tmp/setup_onnx.py
-
-# ============================================================================
-# STEP 4: Create non-root user (HF Spaces requirement: UID 1000)
+# STEP 3: Create non-root user (HF Spaces requirement: UID 1000)
 # ============================================================================
 RUN useradd -m -u 1000 user
 
@@ -56,20 +46,16 @@ ENV HOME=/home/user \
 WORKDIR $HOME/app
 
 # ============================================================================
-# STEP 5: Copy application code
+# STEP 4: Copy application code
 # ============================================================================
 # Copy with ownership set to user
 COPY --chown=user:user . $HOME/app
-
-# Copy the pre-built ONNX model cache to the app directory
-RUN cp -r /onnx_model_cache $HOME/app/onnx_model_cache && \
-    chown -R user:user $HOME/app/onnx_model_cache
 
 # Switch to non-root user
 USER user
 
 # ============================================================================
-# STEP 6: Expose port and run application
+# STEP 5: Expose port and run application
 # ============================================================================
 EXPOSE 7860
 

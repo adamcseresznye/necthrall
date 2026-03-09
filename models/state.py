@@ -49,9 +49,8 @@ class State(BaseModel):
     query: str
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-    # Query optimization (Day 4-5)
+    # Query optimization
     optimized_query: Optional[str] = None
-    ss_variants: Optional[Dict[str, str]] = None  # {primary, broad, alternative}
 
     # Paper retrieval (Day 3)
     papers: List[Paper] = Field(default_factory=list)  # Raw Semantic Scholar hits

@@ -396,7 +396,6 @@ Necthrall understands natural scientific language. You don't need keywords, just
                 await queue.put(
                     (
                         query_text,
-                        deep_mode_switch.value,
                         advance_progress,
                         future,
                     )
@@ -591,16 +590,7 @@ Necthrall understands natural scientific language. You don't need keywords, just
                     search_input.on("keydown.enter", handle_search)
 
                 # Deep Search Switch (Moved below for mobile responsiveness)
-                with ui.row().classes("w-full max-w-2xl justify-end px-2 -mt-1 mb-1"):
-                    deep_mode_switch = (
-                        ui.switch("Deep Search", value=False)
-                        .props("dense color=primary")
-                        .classes("text-slate-500 text-xs md:text-sm")
-                    )
-                    with deep_mode_switch:
-                        ui.tooltip(
-                            "Enable for deep analysis of full PDFs. Disable for faster search using abstracts only."
-                        )
+                # Note: Deep mode removed - always uses full PDF processing
 
                 # 2. Example Queries Row (Centered Below)
                 example_queries_row = ui.row().classes(

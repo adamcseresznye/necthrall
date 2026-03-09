@@ -35,7 +35,10 @@ from deepeval.test_case import LLMTestCase
 
 import agents.quality_gate
 from config.config import get_settings
-from services.query_service import QueryService
+from services.discovery_service import DiscoveryService
+from services.ingestion_service import IngestionService
+from services.rag_service import RAGService
+from services.research_service import ResearchService
 from tests.citation_metrics import CitationAccuracyMetric, CitationValidityMetric
 from tests.eval_config import LLMJudge
 
@@ -45,7 +48,6 @@ def lenient_check_thresholds(metrics):
     # Allow fewer papers for testing
     thresholds = {
         "paper_count": (1, "insufficient paper count ({value} < {threshold})"),
-        "embedding_coverage": (0.0, "low embedding coverage"),
         "abstract_coverage": (0.0, "low abstract coverage"),
     }
     failures = []
@@ -86,8 +88,12 @@ def llm_judge():
 
 @pytest.fixture(scope="module")
 def app_service():
-    # Initialize the service (embedding model loads lazily)
-    return QueryService(get_settings(), None)
+    # Initialize the service
+    settings = get_settings()
+    discovery_service = DiscoveryService(settings)
+    ingestion_service = IngestionService(settings)
+    rag_service = RAGService(settings)
+    return ResearchService(discovery_service, ingestion_service, rag_service)
 
 
 @pytest.mark.asyncio
@@ -101,10 +107,10 @@ async def test_necthrall_end_to_end(entry, app_service, llm_judge):
     print(f"\n\n--- Testing Query: {input_query} ---")
 
     # 1. Run the Application (The "Student")
-    result = await app_service.process_query(input_query)
+    result = await app_service.research(input_query)
 
     # Check for pipeline failure
-    assert result.success, f"Pipeline failed: {result.error}"
+    assert result.success, f"Pipeline failed: {result.error_message}"
     assert result.answer, "Pipeline returned empty answer"
 
     actual_answer = result.answer
@@ -171,13 +177,12 @@ if __name__ == "__main__":
             # Initialize fixtures
             judge = LLMJudge()
 
-            # Load embedding model
-            print("Loading embedding model...")
-            from config.onnx_embedding import initialize_embedding_model
-
-            embedding_model = initialize_embedding_model()
-
-            service = QueryService(get_settings(), embedding_model)
+            # Initialize service
+            settings = get_settings()
+            discovery_service = DiscoveryService(settings)
+            ingestion_service = IngestionService(settings)
+            rag_service = RAGService(settings)
+            service = ResearchService(discovery_service, ingestion_service, rag_service)
 
             # Load data
             data = load_dataset()
@@ -210,9 +215,6 @@ if __name__ == "__main__":
             print(f"Manual test run failed: {e}")
             import traceback
 
-            traceback.print_exc()
-
-    asyncio.run(run_manual_test())
             traceback.print_exc()
 
     asyncio.run(run_manual_test())

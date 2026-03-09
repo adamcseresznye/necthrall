@@ -115,10 +115,7 @@ class DiscoveryService:
         )
         stage_start = time.perf_counter()
         try:
-            query_embedding = None
-            quality_result = await asyncio.to_thread(
-                validate_quality, papers, query_embedding
-            )
+            quality_result = await asyncio.to_thread(validate_quality, papers)
             gate_key = f"quality_gate{attempt_label}"
             timing_breakdown[gate_key] = time.perf_counter() - stage_start
             logger.info(
@@ -165,27 +162,10 @@ class DiscoveryService:
             timing_breakdown["query_optimization"] = 0.0
         else:
             try:
-                if existing_paper_ids is not None:
-                    # Called from ResearchService — query already focused, use single query path
-                    single_q = await self.optimizer.generate_single_query(query)
-                    optimized_queries = {
-                        "strategy": "expansion",
-                        "final_rephrase": query,
-                        "primary": single_q,
-                        "broad": single_q,
-                        "alternative": single_q,
-                        "intent_type": "general",
-                    }
-                    logger.info(
-                        "Single query optimization completed: '{}'", single_q[:100]
-                    )
-                else:
-                    optimized_queries = await self.optimizer.generate_dual_queries(
-                        query
-                    )
-                    logger.info(
-                        "Optimized queries returned by optimizer: {}", optimized_queries
-                    )
+                optimized_queries = await self.optimizer.optimize(query)
+                logger.info(
+                    "Optimized queries returned by optimizer: {}", optimized_queries
+                )
                 timing_breakdown["query_optimization"] = (
                     time.perf_counter() - stage_start
                 )
@@ -199,45 +179,22 @@ class DiscoveryService:
                     f"Failed to optimize query: {str(e)}"
                 ) from e
 
-        # Extract search queries based on strategy
-        strategy = optimized_queries.get("strategy", "expansion")
-        if strategy == "decomposition":
-            queries = optimized_queries.get("sub_queries", [])
-            # Ensure it's a flat list of strings
-            if not isinstance(queries, list):
-                queries = [str(queries)]
-        else:
-            # Expansion strategy
-            queries = [
-                optimized_queries.get("primary", query),
-                optimized_queries.get("broad", query),
-                optimized_queries.get("alternative", query),
-            ]
+        # Extract search query - single query path
+        search_query = optimized_queries.get("final_rephrase", query)
+        queries = [search_query]
         papers, quality_result = await self._execute_search_and_quality_gate(
             queries, timing_breakdown, attempt_label=""
         )
 
-        # Refinement Loop: If quality gate fails on first attempt, try with broad query
+        # Refinement Loop: If quality gate fails on first attempt, retry with original query
         if not quality_result["passed"] and refinement_count == 0:
             logger.warning(
-                "⚠️ Quality gate failed on first attempt, attempting refinement with broad query..."
+                "⚠️ Quality gate failed on first attempt, attempting refinement..."
             )
             refinement_count = 1
 
-            # Use broad query as fallback for refinement
-            fallback_query = optimized_queries.get("broad", query)
-            logger.info(
-                "🔄 Refinement attempt {} - using fallback query: {}",
-                refinement_count,
-                fallback_query[:100],
-            )
-
-            # Re-run search and quality gate with fallback query
-            refinement_queries = [
-                fallback_query,
-                optimized_queries.get("alternative", query),
-                query,
-            ]
+            # Re-run search and quality gate with original query as fallback
+            refinement_queries = [query]
             papers, quality_result = await self._execute_search_and_quality_gate(
                 refinement_queries, timing_breakdown, attempt_label="_refinement"
             )
@@ -278,41 +235,14 @@ class DiscoveryService:
                     f"🔍 DETECTED INTENT: {intent_type} | APPLYING WEIGHTS: {weights}"
                 )
 
-                # Stratified Ranking Logic
-                sub_queries = optimized_queries.get("sub_queries", [])
-                if (
-                    sub_queries
-                    and isinstance(sub_queries, list)
-                    and len(sub_queries) > 1
-                ):
-                    logger.info(
-                        "Applying Stratified Ranking for {} sub-queries",
-                        len(sub_queries),
-                    )
-                    slots = 25 // len(sub_queries)
-                    finalists_set = set()
-                    finalists = []
-
-                    for sub_q in sub_queries:
-                        sub_results = await asyncio.to_thread(
-                            self.ranker.rank_papers,
-                            paper_objects,
-                            sub_q,
-                            slots,
-                            weights,
-                        )
-                        for p in sub_results:
-                            if p.paperId not in finalists_set:
-                                finalists_set.add(p.paperId)
-                                finalists.append(p)
-                else:
-                    finalists = await asyncio.to_thread(
-                        self.ranker.rank_papers,
-                        paper_objects,
-                        optimized_queries["final_rephrase"],
-                        25,  # top_k for Base+Bonus strategy
-                        weights,
-                    )
+                # Rank papers
+                finalists = await asyncio.to_thread(
+                    self.ranker.rank_papers,
+                    paper_objects,
+                    optimized_queries["final_rephrase"],
+                    25,  # top_k
+                    weights,
+                )
 
                 timing_breakdown["composite_scoring"] = (
                     time.perf_counter() - stage_start

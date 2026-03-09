@@ -1,7 +1,7 @@
 """RAG service for stages 7-9 of the pipeline.
 
 Responsibilities:
-7. Hybrid Retrieval
+7. BM25 Retrieval
 8. Synthesis
 9. Verification
 """
@@ -21,7 +21,6 @@ from services.exceptions import RetrievalError, SynthesisError, VerificationErro
 if TYPE_CHECKING:
     from agents.synthesis_agent import SynthesisAgent
     from retrieval.bm25_retriever import BM25Retriever
-    from retrieval.llamaindex_retriever import LlamaIndexRetriever
     from utils.citation_verifier import CitationVerifier
 
 
@@ -36,35 +35,23 @@ class RAGResult:
 
 
 class RAGService:
-    """Service for retrieval, reranking, synthesis, and verification."""
+    """Service for retrieval, synthesis, and verification."""
 
-    def __init__(self, embedding_model: Any, settings: Settings):
+    def __init__(self, settings: Settings):
         """Initialize the RAG service.
 
         Args:
-            embedding_model: Pre-loaded embedding model for retrieval.
             settings: Application settings.
         """
-        self.embedding_model = embedding_model
         self.settings = settings
 
         # Initialize components immediately
-        # Note: We keep imports inside __init__ to avoid circular deps and maintain safe DLL import order
+        # Note: We keep imports inside __init__ to avoid circular deps
         from agents.synthesis_agent import SynthesisAgent
+        from retrieval.bm25_retriever import BM25Retriever
         from utils.citation_verifier import CitationVerifier
 
-        if settings.RAG_RETRIEVAL_MODE == "bm25_only":
-            from retrieval.bm25_retriever import BM25Retriever
-
-            self.retriever = BM25Retriever(top_k=settings.RAG_RETRIEVAL_TOP_K)
-        else:
-            from retrieval.llamaindex_retriever import LlamaIndexRetriever
-
-            self.retriever = LlamaIndexRetriever(
-                embedding_model=embedding_model,
-                top_k=settings.RAG_RETRIEVAL_TOP_K,
-            )
-
+        self.retriever = BM25Retriever(top_k=settings.RAG_RETRIEVAL_TOP_K)
         self.synthesis_agent = SynthesisAgent(settings=settings)
         self.verifier = CitationVerifier()
 
@@ -108,10 +95,17 @@ class RAGService:
         # Fallback: If we don't have enough passages, fill with skipped ones
         if len(selected_passages) < k and skipped_passages:
             needed = k - len(selected_passages)
-            logger.info(
-                "Diversity filter too aggressive, filling {} spots with skipped passages",
-                needed,
-            )
+            if needed > k // 2:
+                logger.warning(
+                    "Diversity constraint left {}/{} spots unfilled — filling from overflow",
+                    needed,
+                    k,
+                )
+            else:
+                logger.debug(
+                    "Diversity constraint filled {} overflow spots",
+                    needed,
+                )
             selected_passages.extend(skipped_passages[:needed])
 
         return selected_passages
@@ -140,24 +134,9 @@ class RAGService:
                 timing_breakdown=timing_breakdown,
             )
 
-        if (
-            self.embedding_model is None
-            and self.settings.RAG_RETRIEVAL_MODE != "bm25_only"
-        ):
-            logger.warning("⚠️ Embedding model not available - skipping RAG stages.")
-            return RAGResult(
-                passages=[],
-                answer=None,
-                citation_verification=None,
-                timing_breakdown=timing_breakdown,
-            )
-
-        # Stage 7: Hybrid Retrieval
-        mode = self.settings.RAG_RETRIEVAL_MODE
-        stage7_label = "BM25 Retrieval" if mode == "bm25_only" else "Hybrid Retrieval"
+        # Stage 7: BM25 Retrieval
         logger.info(
-            "🔍 Stage 7: {} - indexing {} chunks",
-            stage7_label,
+            "🔍 Stage 7: BM25 Retrieval - indexing {} chunks",
             len(chunks),
         )
         stage_start = time.perf_counter()
@@ -236,9 +215,10 @@ class RAGService:
                 verification_result = self.verifier.verify(answer, passages)
                 timing_breakdown["verification"] = time.perf_counter() - stage_start
                 logger.info(
-                    "✅ Verification completed in {:.3f}s - score: {}",
+                    "✅ Verification completed in {:.3f}s - valid={}, citations_found={}",
                     timing_breakdown["verification"],
-                    verification_result.get("score", 0),
+                    verification_result.get("valid"),
+                    len(verification_result.get("citations_found", [])),
                 )
             except Exception as e:
                 logger.warning("⚠️ Verification failed: {}", str(e))

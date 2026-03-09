@@ -6,14 +6,12 @@ Produces three outputs from a single user query:
 - final_rephrase: cleaned query for passage retrieval
 """
 
-import ast
-import json
-import re
 from typing import Optional, TypedDict
 
 from loguru import logger
 
 from config.prompts import PLANNING_TEMPLATE
+from utils.json_utils import parse_llm_json
 from utils.llm_router import LLMRouter
 
 
@@ -69,7 +67,7 @@ class PlanningAgent:
     async def _call_llm(self, prompt: str) -> Optional[str]:
         """Call the LLM router and surface any failures as None."""
         try:
-            response = await self.router.generate(prompt, "optimization")
+            response = await self.router.generate(prompt, "optimization", max_tokens=1024)
             logger.debug("LLM response received: {}", response[:200])
             return response
         except Exception as e:
@@ -77,28 +75,11 @@ class PlanningAgent:
             return None
 
     def _parse_json_response(self, response: str) -> Optional[dict]:
-        """Parse JSON from LLM response, handling markdown fences."""
-        # 1. Try direct parse
-        try:
-            return json.loads(response)
-        except json.JSONDecodeError:
-            pass
-
-        # 2. Extract JSON block
-        match = re.search(r"(\{.*\})", response, re.DOTALL)
-        if not match:
-            logger.error("No JSON block found in PlanningAgent response")
-            return None
-
-        block = match.group(1)
-        try:
-            return json.loads(block)
-        except json.JSONDecodeError:
-            try:
-                return ast.literal_eval(block)
-            except (ValueError, SyntaxError) as e:
-                logger.warning("PlanningAgent JSON parse error: {}", e)
-                return None
+        """Parse JSON from LLM response, handling markdown fences and literal newlines."""
+        parsed = parse_llm_json(response)
+        if parsed is None:
+            logger.warning("PlanningAgent raw LLM response (parse failed): {}", response)
+        return parsed
 
     def _validate_response(self, parsed: dict) -> bool:
         """Validate that all three required keys are present and non-empty strings."""

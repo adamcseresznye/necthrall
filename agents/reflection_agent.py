@@ -5,14 +5,12 @@ from SynthesisAgent, and all queries searched so far, determines whether
 the research loop should continue and what gap to target next.
 """
 
-import ast
-import json
-import re
 from typing import List, Optional, TypedDict
 
 from loguru import logger
 
 from config.prompts import REFLECTION_TEMPLATE
+from utils.json_utils import parse_llm_json
 from utils.llm_router import LLMRouter
 
 
@@ -112,26 +110,11 @@ class ReflectionAgent:
             return None
 
     def _parse_json_response(self, response: str) -> Optional[dict]:  # type: ignore[type-arg]
-        """Parse JSON from LLM response, handling markdown fences."""
-        try:
-            return json.loads(response)  # type: ignore[no-any-return]
-        except json.JSONDecodeError:
-            pass
-
-        match = re.search(r"(\{.*\})", response, re.DOTALL)
-        if not match:
-            logger.error("No JSON block found in ReflectionAgent response")
-            return None
-
-        block = match.group(1)
-        try:
-            return json.loads(block)  # type: ignore[no-any-return]
-        except json.JSONDecodeError:
-            try:
-                return ast.literal_eval(block)  # type: ignore[no-any-return]
-            except (ValueError, SyntaxError) as e:
-                logger.warning("ReflectionAgent JSON parse error: {}", e)
-                return None
+        """Parse JSON from LLM response, handling markdown fences and literal newlines."""
+        parsed = parse_llm_json(response)
+        if parsed is None:
+            logger.warning("ReflectionAgent raw LLM response (parse failed): {}", response)
+        return parsed
 
     def _validate_response(self, parsed: dict) -> bool:  # type: ignore[type-arg]
         """Validate required keys and types."""
